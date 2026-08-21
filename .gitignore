@@ -1,0 +1,6 @@
+impl/
+*.fs
+*.log
+*.tmp
+*.vcd
+sim/top_sim

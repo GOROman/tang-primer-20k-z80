@@ -1,0 +1,6 @@
+[submodule "third_party/jt49"]
+	path = third_party/jt49
+	url = https://github.com/jotego/jt49.git
+[submodule "third_party/tv80"]
+	path = third_party/tv80
+	url = https://github.com/hutch31/tv80.git

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE gowin-fpga-project>
+<Project>
+    <Template>FPGA</Template>
+    <Version>5</Version>
+    <Device name="GW2A-18" pn="GW2A-LV18PG256C8/I7">gw2a18-002</Device>
+    <FileList>
+        <File path="third_party/tv80/rtl/core/tv80n.v" type="file.verilog" enable="1"/>
+        <File path="third_party/tv80/rtl/core/tv80_core.v" type="file.verilog" enable="1"/>
+        <File path="third_party/tv80/rtl/core/tv80_mcode.v" type="file.verilog" enable="1"/>
+        <File path="third_party/tv80/rtl/core/tv80_alu.v" type="file.verilog" enable="1"/>
+        <File path="third_party/tv80/rtl/core/tv80_reg.v" type="file.verilog" enable="1"/>
+        <File path="third_party/jt49/hdl/jt49.v" type="file.verilog" enable="1"/>
+        <File path="third_party/jt49/hdl/jt49_cen.v" type="file.verilog" enable="1"/>
+        <File path="third_party/jt49/hdl/jt49_div.v" type="file.verilog" enable="1"/>
+        <File path="third_party/jt49/hdl/jt49_eg.v" type="file.verilog" enable="1"/>
+        <File path="third_party/jt49/hdl/jt49_exp.v" type="file.verilog" enable="1"/>
+        <File path="third_party/jt49/hdl/jt49_noise.v" type="file.verilog" enable="1"/>
+        <File path="rtl/reset_sync.v" type="file.verilog" enable="1"/>
+        <File path="rtl/soc_memory.v" type="file.verilog" enable="1"/>
+        <File path="rtl/io_decoder.v" type="file.verilog" enable="1"/>
+        <File path="rtl/psg_wrapper.v" type="file.verilog" enable="1"/>
+        <File path="rtl/audio_mixer.v" type="file.verilog" enable="1"/>
+        <File path="rtl/pt8211_tx.v" type="file.verilog" enable="1"/>
+        <File path="rtl/z80_soc.v" type="file.verilog" enable="1"/>
+        <File path="rtl/top.v" type="file.verilog" enable="1"/>
+        <File path="constraints/tang_primer_20k.cst" type="file.cst" enable="1"/>
+        <File path="constraints/tang_primer_20k.sdc" type="file.sdc" enable="1"/>
+    </FileList>
+</Project>
