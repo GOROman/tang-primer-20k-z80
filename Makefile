@@ -13,7 +13,8 @@ firmware:
 	z80asm --list=firmware/generated/psg_demo.lst \
 		--output=firmware/generated/psg_demo.bin firmware/psg_demo/main.asm
 	python3 tools/bin2hex.py firmware/generated/boot.bin firmware/generated/boot.hex
-	python3 tools/bin2hex.py firmware/generated/psg_demo.bin firmware/generated/psg_demo.hex
+	python3 tools/bin2hex.py firmware/generated/psg_demo.bin firmware/generated/psg_demo.hex \
+		--size 57344
 
 uvc-core:
 	AMARANTH_USE_YOSYS=system python3 tools/generate_uvc_core.py

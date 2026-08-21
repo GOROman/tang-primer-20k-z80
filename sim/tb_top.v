@@ -20,6 +20,8 @@ module tb_top;
     reg saw_psg_stage = 1'b0;
     reg saw_loop_led1 = 1'b0;
     reg saw_loop_led0 = 1'b0;
+    reg saw_noise_period = 1'b0;
+    reg saw_noise_enable = 1'b0;
 
     always #18.518 clk = ~clk;
 
@@ -33,8 +35,14 @@ module tb_top;
         .HP_BCK (hp_bck)
     );
 
-    always @(posedge dut.u_soc.u_io.psg_wr)
+    always @(posedge dut.u_soc.u_io.psg_wr) begin
         psg_writes = psg_writes + 1;
+        if (dut.u_soc.u_io.psg_addr == 4'd6)
+            saw_noise_period = 1'b1;
+        if ((dut.u_soc.u_io.psg_addr == 4'd7) &&
+            (dut.u_soc.u_io.psg_din == 8'h30))
+            saw_noise_enable = 1'b1;
+    end
 
     always @(posedge hp_bck)
         bck_edges = bck_edges + 1;
@@ -86,6 +94,14 @@ module tb_top;
             $display("FAIL: only %0d LED writes", led_writes);
             $finish;
         end
+        if (!saw_noise_period) begin
+            $display("FAIL: Z80 did not program PSG noise period register 6");
+            $finish;
+        end
+        if (!saw_noise_enable) begin
+            $display("FAIL: Z80 did not enable PSG noise in mixer register 7");
+            $finish;
+        end
         if (bck_edges < 100) begin
             $display("FAIL: only %0d BCK rising edges", bck_edges);
             $finish;
@@ -96,9 +112,11 @@ module tb_top;
         end
         if ((dut.u_soc.psg_regs[7:0] != 8'h93) ||
             (dut.u_soc.psg_regs[15:8] != 8'h01) ||
+            (dut.u_soc.psg_regs[55:48] != 8'h0C) ||
             (dut.u_soc.psg_regs[63:56] != 8'h38) ||
-            (dut.u_soc.psg_regs[79:72] != 8'h0C) ||
-            (dut.u_soc.psg_regs[87:80] != 8'h0C)) begin
+            (dut.u_soc.psg_regs[71:64] != 8'h0A) ||
+            (dut.u_soc.psg_regs[79:72] != 8'h09) ||
+            (dut.u_soc.psg_regs[87:80] != 8'h09)) begin
             $display("FAIL: PSG shadow registers do not match firmware writes");
             $finish;
         end
@@ -114,7 +132,7 @@ module tb_top;
             $finish;
         end
 
-        $display("PASS: RAM execution=yes LED writes=%0d PSG writes=%0d BCK edges=%0d PCM peak=%0d",
+        $display("PASS: RAM execution=yes noise=yes LED writes=%0d PSG writes=%0d BCK edges=%0d PCM peak=%0d",
                  led_writes, psg_writes, bck_edges, max_pcm);
         $finish;
     end

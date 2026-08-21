@@ -16,8 +16,8 @@ PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-
 - 27 MHzからfractional dividerで48 kHz相当のPT8211信号を生成
 - `z80asm`でROMブートローダとRAM用PSGプログラムを実アセンブル
 - ROMでRAMテスト後、`JP 2000h`によりRAM上のプログラムを実行
-- RAMプログラムにCメジャー3音とChannel A音量変化を実装
-- Icarus VerilogでRAM実行、PSG書き込み、PSGシャドウ値、PT8211 BCKを確認済み
+- RAMプログラムにC→Am→F→Gのコード進行と4拍ノイズリズムを実装
+- Icarus VerilogでRAM実行、PSGノイズ周期、ミキサーのノイズ有効化、PSGシャドウ値、PT8211 BCKを確認済み
 - HDMI VGA互換640×480p60画面へPSGレジスタ0〜15を16進表示
 - USB3317 ULPI経由のUVC 1.1 WebCamとして同じ画面をYUY2 640×480p30で送信
 - Gowin EDA V1.9.11.03 Educationでbitstream生成済み
@@ -234,7 +234,7 @@ ld a, 0Fh
 out (PSG_DATA), a
 ```
 
-RAM上のPSGプログラムではA、B、C各チャンネルに異なる周期を設定し、Cメジャー相当の3音が連続して聞こえるテストを実装します。Z80が停止してもPSGレジスタの設定は保持されるため、音量の周期変化によってCPUがRAM上で継続動作していることを確認します。
+RAM上のPSGプログラムではTone A/B/CでC→Am→F→Gの3和音を演奏します。各コードは4拍保持し、Noise periodとMixer register 7を書き換えてChannel Aに短いノイズヒットを重ねます。1拍目は短い周期で強く、残り3拍は長い周期で軽く鳴らします。
 
 ## 音声データパス
 
@@ -369,12 +369,12 @@ S0を押している間はZ80、RAM制御、PSG、PT8211送信器をリセット
 
 1. デバッグLEDを点灯
 2. PSGレジスタを初期化
-3. Tone A/B/CへC4/E4/G4を設定
-4. CPUレジスタのカウンタで一定時間待つ
-5. Channel Aの音量を15と8の間で変更
-6. ループ
+3. Tone A/B/CへC→Am→F→Gの各構成音を設定
+4. Noise period register 6とMixer register 7でChannel Aへノイズを短時間混合
+5. 各コードで4拍のリズムを演奏
+6. C→Am→F→Gをループ
 
-`make firmware`は両ソースを実際に`z80asm`でアセンブルします。生成された29バイトのROMイメージを`0000h`、106バイトのPSGプログラムを`2000h`からBlock RAMへ初期配置します。
+`make firmware`は両ソースを実際に`z80asm`でアセンブルします。生成された38バイトのROMイメージを`0000h`、216バイトのPSGプログラムを`2000h`からBlock RAMへ初期配置します。PSG用HEXはRAM領域全体の56 KiBへ自動的にゼロ埋めするため、アプリが増えても固定バイト数で途切れません。
 
 ## 想定ディレクトリ構成
 
@@ -467,7 +467,7 @@ make sim
 make sim-uvc
 ```
 
-`make sim`はROM上のRAMテスト、`2000h`からのRAMコード実行、PSGレジスタ書き込み回数とシャドウ値、PT8211 BCK、PA_EN、PCMピークを検査します。`make sim-uvc`はUVC/YUY2パケット境界とフレーム長を検査します。
+`make sim`はROM上のRAMテスト、`2000h`からのRAMコード実行、PSGレジスタ書き込みとシャドウ値、Noise period register 6、Mixer register 7のノイズ有効化、PT8211 BCK、PA_EN、PCMピークを検査します。`make sim-uvc`はUVC/YUY2パケット境界とフレーム長を検査します。
 
 ## 実装ステップ
 
