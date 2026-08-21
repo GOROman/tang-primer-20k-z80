@@ -4,5 +4,6 @@ impl/
 *.tmp
 *.vcd
 sim/top_sim
+sim/uvc_sim
 firmware/generated/*.bin
 firmware/generated/*.lst

@@ -1,7 +1,7 @@
 GOWIN_ROOT ?= /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE
 GOWIN_SH ?= $(GOWIN_ROOT)/bin/gw_sh
 
-.PHONY: init firmware build sim clean
+.PHONY: init firmware uvc-core build sim sim-uvc clean
 
 init:
 	git submodule update --init --recursive
@@ -14,6 +14,9 @@ firmware:
 		--output=firmware/generated/psg_demo.bin firmware/psg_demo/main.asm
 	python3 tools/bin2hex.py firmware/generated/boot.bin firmware/generated/boot.hex
 	python3 tools/bin2hex.py firmware/generated/psg_demo.bin firmware/generated/psg_demo.hex
+
+uvc-core:
+	AMARANTH_USE_YOSYS=system python3 tools/generate_uvc_core.py
 
 build: firmware
 	python3 tools/prepare_hdmi_tx.py
@@ -36,6 +39,11 @@ sim: firmware
 		../third_party/jt49/hdl/jt49_noise.v
 	cd rtl && vvp ../sim/top_sim
 
+sim-uvc:
+	cd rtl && iverilog -g2005 -o ../sim/uvc_sim \
+		../sim/tb_usb_uvc_stream.v psg_debug_pixel.v usb_uvc_stream.v
+	cd rtl && vvp ../sim/uvc_sim
+
 clean:
 	rm -rf impl
-	rm -f sim/top_sim sim/top.vcd firmware/generated/*.bin firmware/generated/*.lst
+	rm -f sim/top_sim sim/uvc_sim sim/top.vcd firmware/generated/*.bin firmware/generated/*.lst

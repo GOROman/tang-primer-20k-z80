@@ -9,7 +9,13 @@ module top (
     output wire O_tmds_clk_p,
     output wire O_tmds_clk_n,
     output wire [2:0] O_tmds_data_p,
-    output wire [2:0] O_tmds_data_n
+    output wire [2:0] O_tmds_data_n,
+    output wire       ulpi_rst,
+    input  wire       ulpi_clk,
+    input  wire       ulpi_dir,
+    input  wire       ulpi_nxt,
+    output wire       ulpi_stp,
+    inout  wire [7:0] ulpi_data
 );
     wire reset_n_int;
     wire [15:0] pcm_left;
@@ -17,6 +23,9 @@ module top (
     wire [5:0] debug_led;
     wire [127:0] psg_regs;
     wire [3:0] psg_selected;
+    wire usb_clock_alive;
+    wire usb_dir_seen;
+    wire usb_nxt_seen;
 
     reset_sync u_reset (
         .clk         (clk),
@@ -46,13 +55,19 @@ module top (
     );
 
     // The six Dock LEDs are active-low.
-    assign led = ~debug_led;
+    assign led = ~(debug_led | {usb_clock_alive, usb_dir_seen, usb_nxt_seen, 3'b000});
 
 `ifdef SIMULATION
     assign O_tmds_clk_p  = 1'b0;
     assign O_tmds_clk_n  = 1'b0;
     assign O_tmds_data_p = 3'b000;
     assign O_tmds_data_n = 3'b000;
+    assign ulpi_rst       = 1'b1;
+    assign ulpi_stp       = 1'b0;
+    assign ulpi_data      = 8'hZZ;
+    assign usb_clock_alive = 1'b0;
+    assign usb_dir_seen    = 1'b0;
+    assign usb_nxt_seen    = 1'b0;
 `else
     hdmi_output u_hdmi (
         .clk_27m       (clk),
@@ -63,6 +78,21 @@ module top (
         .tmds_clk_n    (O_tmds_clk_n),
         .tmds_data_p   (O_tmds_data_p),
         .tmds_data_n   (O_tmds_data_n)
+    );
+
+    usb_uvc_output u_usb_uvc (
+        .rst_n         (reset_n_int),
+        .psg_regs      (psg_regs),
+        .psg_selected  (psg_selected),
+        .ulpi_rst      (ulpi_rst),
+        .ulpi_clk      (ulpi_clk),
+        .ulpi_dir      (ulpi_dir),
+        .ulpi_nxt      (ulpi_nxt),
+        .ulpi_stp      (ulpi_stp),
+        .ulpi_data     (ulpi_data),
+        .usb_clock_alive (usb_clock_alive),
+        .usb_dir_seen    (usb_dir_seen),
+        .usb_nxt_seen    (usb_nxt_seen)
     );
 `endif
 endmodule

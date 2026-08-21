@@ -31,6 +31,10 @@ add_file rtl/hdmi_tx_wrapper.vhd
 add_file rtl/hdmi_clock.v
 add_file rtl/hdmi_psg_debug.v
 add_file rtl/hdmi_output.v
+add_file rtl/generated/usb_uvc_core.v
+add_file rtl/psg_debug_pixel.v
+add_file rtl/usb_uvc_stream.v
+add_file rtl/usb_uvc_output.v
 add_file rtl/z80_soc.v
 add_file rtl/top.v
 add_file constraints/tang_primer_20k.cst

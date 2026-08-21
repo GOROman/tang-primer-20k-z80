@@ -5,7 +5,7 @@ Tang Primer 20K Dock 上に、Z80 互換CPU、ROM、RAM、AY-3-8910/YM2149互換
 PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-bit PCMへ変換して、Dock搭載のPT8211ステレオDACから出力します。
 
 > [!IMPORTANT]
-> RTL実装、実アセンブル、シミュレーション、Gowinでのbitstream生成、GW2A-18へのSRAM転送、PT8211からの実機発音まで確認済みです。HDMIレジスタ画面は実装・検証中です。
+> RTL実装、実アセンブル、シミュレーション、Gowinでのbitstream生成、GW2A-18へのSRAM転送、PT8211からの実機発音まで確認済みです。HDMI画面とUSB UVC列挙・映像は実機確認中です。
 
 ## 現在の実装状況
 
@@ -19,11 +19,12 @@ PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-
 - RAMプログラムにCメジャー3音とChannel A音量変化を実装
 - Icarus VerilogでRAM実行、PSG書き込み、PSGシャドウ値、PT8211 BCKを確認済み
 - HDMI VGA互換640×480p60画面へPSGレジスタ0〜15を16進表示
+- USB3317 ULPI経由のUVC 1.1 WebCamとして同じ画面をYUY2 640×480p30で送信
 - Gowin EDA V1.9.11.03 Educationでbitstream生成済み
 - GW2A(R)-18(C)を検出し、bitstreamをSRAMへ転送済み
 - LED1/0交互点滅とPT8211の実機発音を確認済み
 
-未確認項目はHDMI画面の実機表示です。
+未確認項目はHDMI画面の実機表示と、PC上でのUSB UVC列挙・映像表示です。
 
 ## 目標
 
@@ -275,8 +276,7 @@ VGA互換640×480p60のデバッグ画面を出力します。Z80が`A0h`で選�
 `A1h`で更新するたびに16×8-bitのシャドウレジスタへ保存し、画面へ
 `R0:xx`〜`RF:xx`の2列で表示します。現在選択中のレジスタは黄色で強調します。
 
-将来のUSB UVC出力も同じ640×480画素レンダラを共有し、USB WebCam側は
-非圧縮YUY2 640×480p30として送出する設計です。
+USB UVC出力も同じPSGレジスタ画面を使い、非圧縮YUY2 640×480p30として送出します。
 
 TMDSエンコードとGW2A OSER10シリアライザにはMITライセンスの
 [osafune/hdmi_tx](https://github.com/osafune/hdmi_tx)を使用します。
@@ -287,6 +287,48 @@ TMDSエンコードとGW2A OSER10シリアライザにはMITライセンスの
 | `O_tmds_data_p[0]` | `H14,H16` | TMDS data 0 |
 | `O_tmds_data_p[1]` | `J15,K16` | TMDS data 1 |
 | `O_tmds_data_p[2]` | `K14,K15` | TMDS data 2 |
+
+## USB HOST/OTG端子のWebCam出力
+
+Dock上で「USB HOST」と表記されるUSB3317接続端子を、PC接続時にはUSB 2.0
+High-Speed UVC Deviceとして使用します。USB機能スライドスイッチをDevice/OTG側へ
+設定してからPCへ接続してください。JTAG/UART用Type-C端子とは別の端子です。
+
+- UVC version: 1.1
+- Format: YUY2、640×480、16 bit/pixel
+- Frame interval: 333,333×100 ns（約30 fps）
+- Transfer: High-Speed Bulk IN、Endpoint `81h`、最大512 byte
+- Payload: 各USBパケットの先頭に2-byte UVCヘッダ、FID/EOF付き
+- USB PHY: Dock搭載USB3317、60 MHz ULPI
+
+`rtl/generated/usb_uvc_core.v`はLUNA 0.2.3から生成した固定Verilogです。通常の
+GowinビルドではPython依存関係は不要です。コアを再生成する場合だけ、Python仮想環境で
+次を実行します。
+
+```sh
+python3 -m pip install -r tools/requirements-uvc.txt
+make uvc-core
+```
+
+UVCパケット生成の単体テストは次のとおりです。
+
+```sh
+make sim-uvc
+```
+
+テストは1フレームについて、1205パケット、614,400映像byte、合計616,810 byte、
+YUY2先頭画素、EOFヘッダを確認します。
+
+| ULPI信号 | FPGAピン |
+| --- | --- |
+| `ulpi_clk` | `T15` |
+| `ulpi_dir` / `ulpi_nxt` / `ulpi_stp` | `K12` / `K13` / `K11` |
+| `ulpi_rst` | `F10` |
+| `ulpi_data[7:0]` | `R12,P13,R13,T14,H13,J12,H12,G11` |
+
+USB診断中は起動後のLED5/4/3をULPI状態表示にも使います。LED5は60 MHz
+ULPIクロック検出、LED4はDIRを一度でも検出、LED3はNXTを一度でも検出すると点灯を保持します。
+LED1/0の交互点滅は従来どおりZ80 RAMプログラムの動作表示です。
 
 ## その他のピン割り当て
 
@@ -422,9 +464,10 @@ Icarus Verilogがインストール済みなら、次のコマンドでSoCテス
 
 ```sh
 make sim
+make sim-uvc
 ```
 
-テストは、ROM上のRAMテスト、`2000h`からのRAMコード実行、PSGレジスタ書き込み回数とシャドウ値、PT8211 BCK、PA_EN、PCMピークを検査します。
+`make sim`はROM上のRAMテスト、`2000h`からのRAMコード実行、PSGレジスタ書き込み回数とシャドウ値、PT8211 BCK、PA_EN、PCMピークを検査します。`make sim-uvc`はUVC/YUY2パケット境界とフレーム長を検査します。
 
 ## 実装ステップ
 
@@ -519,7 +562,8 @@ make sim
 - [T80 Z80-compatible core](https://opencores.org/projects/t80)
 - [TV80 Z80-compatible core](https://github.com/hutch31/tv80)
 - [osafune/hdmi_tx](https://github.com/osafune/hdmi_tx)
+- [Great Scott Gadgets LUNA](https://github.com/greatscottgadgets/luna)
 
 ## ライセンス
 
-このプロジェクト独自のRTLと文書はMIT Licenseです。TV80とhdmi_txはMIT、JT49はGPL-3.0-or-laterです。JT49を含むbitstreamを再配布する場合は、GPL-3.0-or-laterの条件に従って対応するソースを提供してください。詳細と固定コミットは`THIRD_PARTY.md`を参照してください。
+このプロジェクト独自のRTLと文書はMIT Licenseです。TV80とhdmi_txはMIT、LUNAはBSD-3-Clause、JT49はGPL-3.0-or-laterです。JT49を含むbitstreamを再配布する場合は、GPL-3.0-or-laterの条件に従って対応するソースを提供してください。詳細と固定コミットは`THIRD_PARTY.md`を参照してください。
