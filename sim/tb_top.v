@@ -11,6 +11,7 @@ module tb_top;
 
     integer psg_writes = 0;
     integer bck_edges = 0;
+    reg saw_ram_execution = 1'b0;
 
     always #18.518 clk = ~clk;
 
@@ -30,6 +31,12 @@ module tb_top;
     always @(posedge hp_bck)
         bck_edges = bck_edges + 1;
 
+    always @(posedge clk) begin
+        if (!dut.u_soc.mreq_n && !dut.u_soc.rd_n &&
+            (dut.u_soc.cpu_addr == 16'h2000))
+            saw_ram_execution = 1'b1;
+    end
+
     initial begin
         $dumpfile("../sim/top.vcd");
         $dumpvars(0, tb_top);
@@ -38,6 +45,10 @@ module tb_top;
 
         if (psg_writes < 10) begin
             $display("FAIL: only %0d PSG writes", psg_writes);
+            $finish;
+        end
+        if (!saw_ram_execution) begin
+            $display("FAIL: Z80 did not fetch code from RAM at 2000h");
             $finish;
         end
         if (bck_edges < 100) begin
@@ -49,7 +60,8 @@ module tb_top;
             $finish;
         end
 
-        $display("PASS: PSG writes=%0d BCK edges=%0d", psg_writes, bck_edges);
+        $display("PASS: RAM execution=yes PSG writes=%0d BCK edges=%0d",
+                 psg_writes, bck_edges);
         $finish;
     end
 endmodule

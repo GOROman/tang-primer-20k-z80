@@ -11,7 +11,8 @@ module soc_memory (
 
     initial begin
         // Gowin resolves this path relative to this RTL source file.
-        $readmemh("../firmware/boot.hex", memory, 0, 131);
+        $readmemh("../firmware/generated/boot.hex", memory, 0, 28);
+        $readmemh("../firmware/generated/psg_demo.hex", memory, 8192, 8297);
     end
 
     always @(posedge clk) begin

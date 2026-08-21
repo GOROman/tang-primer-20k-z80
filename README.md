@@ -5,7 +5,7 @@ Tang Primer 20K Dock 上に、Z80 互換CPU、ROM、RAM、AY-3-8910/YM2149互換
 PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-bit PCMへ変換して、Dock搭載のPT8211ステレオDACから出力します。
 
 > [!IMPORTANT]
-> RTL実装とGowinでの合成・配置配線・bitstream生成までは完了しています。FPGAへの書き込みと実機での発音確認はまだ行っていません。
+> RTL実装、実アセンブル、シミュレーション、Gowinでのbitstream生成、GW2A-18へのSRAM転送まで完了しています。実機での発音確認はまだ完了していません。
 
 ## 現在の実装状況
 
@@ -14,11 +14,14 @@ PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-
 - Z80 I/Oポート`A0h`/`A1h`からJT49 PSGを制御
 - PSG出力を16-bitモノラルPCMへ変換し左右へ複製
 - 27 MHzからfractional dividerで48 kHz相当のPT8211信号を生成
-- 起動ROMにRAMテスト、Cメジャー3音、Channel A音量変化を実装
-- Icarus VerilogでRAMテスト、PSG書き込み11回、PT8211 BCKを確認済み
+- `z80asm`でROMブートローダとRAM用PSGプログラムを実アセンブル
+- ROMでRAMテスト後、`JP 2000h`によりRAM上のプログラムを実行
+- RAMプログラムにCメジャー3音とChannel A音量変化を実装
+- Icarus VerilogでRAM実行、PSG書き込み11回、PT8211 BCKを確認済み
 - Gowin EDA V1.9.11.03 Educationでbitstream生成済み
+- GW2A(R)-18(C)を検出し、bitstreamをSRAMへ転送済み
 
-未確認項目は実機への転送、DAC信号の実測、実際の発音です。
+未確認項目はDAC信号の実測と実際の発音です。
 
 ## 目標
 
@@ -27,7 +30,7 @@ PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-
 - Z80の`OUT`/`IN`命令でPSGレジスタを操作する
 - 3矩形波、ノイズ、エンベロープを利用できるようにする
 - Dock搭載PT8211 DACとオーディオアンプから音を出す
-- 最初の起動ROMだけで自動的に3音のテスト演奏を行う
+- 起動ROMからRAM上のアセンブル済みプログラムを実行して3音を演奏する
 - シミュレーション、合成、書き込み、実機発音を別々に検証する
 
 ## 対象ハードウェア
@@ -133,8 +136,8 @@ Z80の64 KiBアドレス空間を次のように割り当てます。
 
 | アドレス | サイズ | 種別 | 内容 |
 | --- | ---: | --- | --- |
-| `0000h–1FFFh` | 8 KiB | ROM | 起動コードとテスト演奏プログラム |
-| `2000h–FFFFh` | 56 KiB | RAM | プログラム、スタック、ワーク領域 |
+| `0000h–1FFFh` | 8 KiB | ROM | RAMテストと`JP 2000h`を行うブートローダ |
+| `2000h–FFFFh` | 56 KiB | RAM | アセンブル済みPSGプログラム、スタック、ワーク領域 |
 
 ROMとRAMはGW2AのBlock SRAMから推論します。外部DDR3は初期版では使いません。8 KiB ROMと56 KiB RAMの合計64 KiBは約512 Kbitです。
 
@@ -223,7 +226,7 @@ ld a, 0Fh
 out (PSG_DATA), a
 ```
 
-起動ROMではA、B、C各チャンネルに異なる周期を設定し、Cメジャー相当の3音が連続して聞こえるテストを実装します。Z80が停止してもPSGレジスタの設定は保持されるため、音が継続すればCPUからPSGまでの制御経路を確認できます。
+RAM上のPSGプログラムではA、B、C各チャンネルに異なる周期を設定し、Cメジャー相当の3音が連続して聞こえるテストを実装します。Z80が停止してもPSGレジスタの設定は保持されるため、音量の周期変化によってCPUがRAM上で継続動作していることを確認します。
 
 ## 音声データパス
 
@@ -279,21 +282,30 @@ PT8211は一般的なI2Sとはデータ位置やWSタイミングが異なるた
 
 非同期入力によるリセットアサートは許可しても、解除は必ずシステムクロックへ同期させます。
 
-## 起動ROM
+## Z80ソフトウェア
 
-最初のROMプログラムは次を行います。
+### ROMブートローダ
+
+`firmware/boot/boot.asm`を`0000h`向けにアセンブルします。
 
 1. 割り込み禁止
 2. SPを`FFFFh`へ設定
-3. RAMの先頭数バイトへテストパターンを書き込んで読み戻す
-4. 成功時はデバッグLEDを点灯、失敗時は消灯
-5. PSGレジスタを初期化
-6. Tone A/B/Cへ3音を設定
-7. CPUレジスタのカウンタで一定時間待つ
-8. 音程または音量を変更して、Z80が継続動作していることを示す
-9. ループ
+3. アプリケーションを壊さない`FF00h`で`55h`/`AAh`のRAMテスト
+4. 失敗時はLEDを消灯して停止
+5. 成功時は`JP 2000h`でRAMへ制御を移す
 
-RAMテストとPSG更新を同じプログラムで行うことで、単なる固定ハードウェア発振ではなく、Z80がROMから実行し、RAMを使用し、I/Oポートを通じて音源を操作していることを確認します。
+### RAMプログラム
+
+`firmware/psg_demo/main.asm`を`2000h`向けにアセンブルします。
+
+1. デバッグLEDを点灯
+2. PSGレジスタを初期化
+3. Tone A/B/CへC4/E4/G4を設定
+4. CPUレジスタのカウンタで一定時間待つ
+5. Channel Aの音量を15と8の間で変更
+6. ループ
+
+`make firmware`は両ソースを実際に`z80asm`でアセンブルします。生成された29バイトのROMイメージを`0000h`、106バイトのPSGプログラムを`2000h`からBlock RAMへ初期配置します。
 
 ## 想定ディレクトリ構成
 
@@ -317,8 +329,15 @@ RAMテストとPSG更新を同じプログラムで行うことで、単なる�
 │   ├── audio_mixer.v
 │   └── pt8211_tx.v
 ├── firmware/
-│   ├── boot.asm
-│   └── boot.hex
+│   ├── boot/
+│   │   └── boot.asm
+│   ├── psg_demo/
+│   │   └── main.asm
+│   └── generated/
+│       ├── boot.hex
+│       └── psg_demo.hex
+├── tools/
+│   └── bin2hex.py
 └── sim/
     └── tb_top.v
 ```
@@ -330,6 +349,7 @@ RAMテストとPSG更新を同じプログラムで行うことで、単なる�
 ```sh
 git clone --recurse-submodules https://github.com/GOROman/tang-primer-20k-z80.git
 cd tang-primer-20k-z80
+brew install z80asm icarus-verilog
 make build
 ```
 
@@ -340,6 +360,14 @@ make init
 ```
 
 macOS版Gowin EDAの標準インストール先を使用します。別の場所へインストールした場合は`GOWIN_ROOT`を指定してください。
+
+Z80ソフトウェアだけを再アセンブルする場合は次を実行します。
+
+```sh
+make firmware
+```
+
+生成される`boot.hex`と`psg_demo.hex`はGowinの`$readmemh`形式です。`.bin`と`.lst`は確認用生成物としてGit管理しません。
 
 ```sh
 make build GOWIN_ROOT=/path/to/Gowin_EDA/IDE
@@ -362,7 +390,7 @@ Icarus Verilogがインストール済みなら、次のコマンドでSoCテス
 make sim
 ```
 
-テストは、Z80によるRAMテスト成功、PSGレジスタ書き込み回数、PT8211 BCKの発生を検査します。
+テストは、ROM上のRAMテスト、`2000h`からのRAMコード実行、PSGレジスタ書き込み回数、PT8211 BCKの発生を検査します。
 
 ## 実装ステップ
 

@@ -4,3 +4,5 @@ impl/
 *.tmp
 *.vcd
 sim/top_sim
+firmware/generated/*.bin
+firmware/generated/*.lst

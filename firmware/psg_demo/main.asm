@@ -1,20 +1,12 @@
-; Tang Primer 20K Z80 + PSG boot ROM
-; Assemble at 0000h. The checked-in boot.hex contains these bytes.
+; PSG demo program executed from Block RAM at 2000h.
 
-PSG_ADDR equ 0A0h
-PSG_DATA equ 0A1h
-LED_PORT equ 0B0h
+PSG_ADDR: equ 0A0h
+PSG_DATA: equ 0A1h
+LED_PORT: equ 0B0h
 
-        org 0000h
-        di
-        ld sp, 0FFFFh
+        org 02000h
 
-        ld hl, 02000h
-        ld (hl), 055h
-        ld a, (hl)
-        cp 055h
-        jr nz, ram_fail
-
+start:
         ld a, 1
         out (LED_PORT), a
 
@@ -24,7 +16,7 @@ LED_PORT equ 0B0h
         ld a, 038h
         out (PSG_DATA), a
 
-        ; Tone A: period 0193h
+        ; Tone A: period 0193h, approximately C4.
         ld a, 0
         out (PSG_ADDR), a
         ld a, 093h
@@ -34,7 +26,7 @@ LED_PORT equ 0B0h
         ld a, 1
         out (PSG_DATA), a
 
-        ; Tone B: period 0140h
+        ; Tone B: period 0140h, approximately E4.
         ld a, 2
         out (PSG_ADDR), a
         ld a, 040h
@@ -44,7 +36,7 @@ LED_PORT equ 0B0h
         ld a, 1
         out (PSG_DATA), a
 
-        ; Tone C: period 010Dh
+        ; Tone C: period 010Dh, approximately G4.
         ld a, 4
         out (PSG_ADDR), a
         ld a, 00Dh
@@ -84,12 +76,3 @@ delay_loop:
         jr nz, delay_loop
         pop af
         jr volume_loop
-
-ram_fail:
-        xor a
-        out (LED_PORT), a
-        ld a, 8
-        out (PSG_ADDR), a
-        xor a
-        out (PSG_DATA), a
-        jr ram_fail

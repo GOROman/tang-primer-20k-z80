@@ -1,15 +1,24 @@
 GOWIN_ROOT ?= /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE
 GOWIN_SH ?= $(GOWIN_ROOT)/bin/gw_sh
 
-.PHONY: init build sim clean
+.PHONY: init firmware build sim clean
 
 init:
 	git submodule update --init --recursive
 
-build:
+firmware:
+	mkdir -p firmware/generated
+	z80asm --list=firmware/generated/boot.lst \
+		--output=firmware/generated/boot.bin firmware/boot/boot.asm
+	z80asm --list=firmware/generated/psg_demo.lst \
+		--output=firmware/generated/psg_demo.bin firmware/psg_demo/main.asm
+	python3 tools/bin2hex.py firmware/generated/boot.bin firmware/generated/boot.hex
+	python3 tools/bin2hex.py firmware/generated/psg_demo.bin firmware/generated/psg_demo.hex
+
+build: firmware
 	DYLD_LIBRARY_PATH=$(GOWIN_ROOT)/lib DYLD_FRAMEWORK_PATH=$(GOWIN_ROOT)/lib $(GOWIN_SH) run.tcl
 
-sim:
+sim: firmware
 	cd rtl && iverilog -g2005 -o ../sim/top_sim \
 		../sim/tb_top.v reset_sync.v soc_memory.v io_decoder.v \
 		psg_wrapper.v audio_mixer.v pt8211_tx.v z80_soc.v top.v \
@@ -28,4 +37,4 @@ sim:
 
 clean:
 	rm -rf impl
-	rm -f sim/top_sim sim/top.vcd
+	rm -f sim/top_sim sim/top.vcd firmware/generated/*.bin firmware/generated/*.lst
