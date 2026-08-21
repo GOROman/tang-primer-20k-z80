@@ -5,7 +5,7 @@ Tang Primer 20K Dock 上に、Z80 互換CPU、ROM、RAM、AY-3-8910/YM2149互換
 PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-bit PCMへ変換して、Dock搭載のPT8211ステレオDACから出力します。
 
 > [!IMPORTANT]
-> RTL実装、実アセンブル、シミュレーション、Gowinでのbitstream生成、GW2A-18へのSRAM転送まで完了しています。実機での発音確認はまだ完了していません。
+> RTL実装、実アセンブル、シミュレーション、Gowinでのbitstream生成、GW2A-18へのSRAM転送、PT8211からの実機発音まで確認済みです。HDMIレジスタ画面は実装・検証中です。
 
 ## 現在の実装状況
 
@@ -17,11 +17,13 @@ PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-
 - `z80asm`でROMブートローダとRAM用PSGプログラムを実アセンブル
 - ROMでRAMテスト後、`JP 2000h`によりRAM上のプログラムを実行
 - RAMプログラムにCメジャー3音とChannel A音量変化を実装
-- Icarus VerilogでRAM実行、PSG書き込み11回、PT8211 BCKを確認済み
+- Icarus VerilogでRAM実行、PSG書き込み、PSGシャドウ値、PT8211 BCKを確認済み
+- HDMI VGA互換640×480p60画面へPSGレジスタ0〜15を16進表示
 - Gowin EDA V1.9.11.03 Educationでbitstream生成済み
 - GW2A(R)-18(C)を検出し、bitstreamをSRAMへ転送済み
+- LED1/0交互点滅とPT8211の実機発音を確認済み
 
-未確認項目はDAC信号の実測と実際の発音です。
+未確認項目はHDMI画面の実機表示です。
 
 ## 目標
 
@@ -165,7 +167,12 @@ Z80のI/O空間は下位8 bitをデコードします。
 | `A0h` | W | PSGレジスタ番号を選択（0～15） |
 | `A1h` | W | 選択中のPSGレジスタへデータを書き込み |
 | `A1h` | R | 選択中のPSGレジスタを読み出し |
-| `B0h` | W | デバッグLED出力 |
+| `B0h` | W | デバッグLED5〜0出力（bit 5〜0、1で点灯） |
+
+診断ファームウェアは、`20h`（Boot ROM開始）、`10h`（RAM試験成功）、
+`08h`（RAMアプリ開始）、`04h`（PSG初期化完了）の順に表示し、
+メインループでは`02h`と`01h`を交互に出力してLED1/LED0を点滅させます。
+RAM試験に失敗した場合はLED0が点灯したままになります。
 | その他 | - | 予約。読み出し値は`FFh` |
 
 I/Oライトパルスは、次の条件を27 MHzクロックへ同期させて1回だけ生成します。Z80の1回のバスサイクル中に同じPSGレジスタへ複数回書き込まないよう、前サイクルの状態を使って立ち上がりを検出します。
@@ -230,7 +237,7 @@ RAM上のPSGプログラムではA、B、C各チャンネルに異なる周期�
 
 ## 音声データパス
 
-JT49が生成する3チャンネル合成済み10-bit出力を、安全な範囲の16-bit unipolar PCMへスケーリングします。
+JT49が生成する3チャンネル合成済み10-bit出力を、安全な範囲の16-bit unipolar PCMへスケーリングします。Dockアンプの実機音量を抑えるため、現在はJT49出力を3倍し、初期の32倍設定に対して約9.4%（約10%）の音量に設定しています。
 
 ```text
 JT49 tone/noise/envelope --> 10-bit summed sound --> 16-bit scale
@@ -261,15 +268,35 @@ Tang Primer 20K DockのPT8211へ次の3信号を出力します。
 
 PT8211は一般的なI2Sとはデータ位置やWSタイミングが異なるため、汎用I2S送信器をそのまま使わず、PT8211用シリアライザを使用します。DINはBCKのサンプリングエッジに対して十分なセットアップ時間を確保します。
 
+## HDMI PSGレジスタ表示
+
+27 MHz入力からPLLで126 MHzを生成し、5分周した25.2 MHzを使って
+VGA互換640×480p60のデバッグ画面を出力します。Z80が`A0h`で選択したPSGレジスタを
+`A1h`で更新するたびに16×8-bitのシャドウレジスタへ保存し、画面へ
+`R0:xx`〜`RF:xx`の2列で表示します。現在選択中のレジスタは黄色で強調します。
+
+将来のUSB UVC出力も同じ640×480画素レンダラを共有し、USB WebCam側は
+非圧縮YUY2 640×480p30として送出する設計です。
+
+TMDSエンコードとGW2A OSER10シリアライザにはMITライセンスの
+[osafune/hdmi_tx](https://github.com/osafune/hdmi_tx)を使用します。
+
+| 信号 | FPGAピンペア | 内容 |
+| --- | --- | --- |
+| `O_tmds_clk_p` | `G16,H15` | TMDS clock |
+| `O_tmds_data_p[0]` | `H14,H16` | TMDS data 0 |
+| `O_tmds_data_p[1]` | `J15,K16` | TMDS data 1 |
+| `O_tmds_data_p[2]` | `K14,K15` | TMDS data 2 |
+
 ## その他のピン割り当て
 
 | 信号 | FPGAピン | 備考 |
 | --- | --- | --- |
 | `clk` | `H11` | 27 MHz |
-| `rst_n` | `T3` | Sipeed PT8211サンプルに合わせたリセット入力 |
-| `led` | `L16` | Active-lowデバッグLED |
+| `rst_n` | `T10` | DockのS0スイッチ、Active-Lowリセット入力 |
+| `led[5:0]` | `L16,L14,N14,N16,A13,C13` | DockのLED5〜0、Active-lowデバッグLED |
 
-現在の制約は、Sipeed公式PT8211サンプルに合わせて`rst_n=T3`を採用しています。別資料には`T10`の記載もあるため、手元のDockでリセットボタンが反応しない場合は、基板版と回路図を確認します。
+S0を押している間はZ80、RAM制御、PSG、PT8211送信器をリセットし、離してから1024システムクロック待ってZ80を`0000h`から再起動します。
 
 ## リセットシーケンス
 
@@ -379,8 +406,15 @@ make build GOWIN_ROOT=/path/to/Gowin_EDA/IDE
 
 ```sh
 openFPGALoader --detect
-openFPGALoader --write-sram --reset -b tangprimer20k impl/pnr/project.fs
+openFPGALoader --write-sram -b tangprimer20k impl/pnr/project.fs
 ```
+
+> **重要:** SRAM転送に`--reset`を付けてはいけません。
+> `openFPGALoader --reset`は操作後にFPGAをリセットするため、SRAMへ転送した
+> 新しい構成が破棄され、Flash内の旧ビットストリームへ戻ります。
+> 転送ログが100%および`DONE`でも、実機では旧版が動くため注意してください。
+> S0はT10に接続したSoC内のActive-Lowリセットなので、SRAM転送後の
+> Z80再起動にはS0を使用します。
 
 検出結果がTang Primer 20K/GW2A-18でない場合は書き込まないでください。
 
@@ -390,7 +424,7 @@ Icarus Verilogがインストール済みなら、次のコマンドでSoCテス
 make sim
 ```
 
-テストは、ROM上のRAMテスト、`2000h`からのRAMコード実行、PSGレジスタ書き込み回数、PT8211 BCKの発生を検査します。
+テストは、ROM上のRAMテスト、`2000h`からのRAMコード実行、PSGレジスタ書き込み回数とシャドウ値、PT8211 BCK、PA_EN、PCMピークを検査します。
 
 ## 実装ステップ
 
@@ -484,7 +518,8 @@ make sim
 - [JT49 YM2149-compatible PSG core](https://github.com/jotego/jt49)
 - [T80 Z80-compatible core](https://opencores.org/projects/t80)
 - [TV80 Z80-compatible core](https://github.com/hutch31/tv80)
+- [osafune/hdmi_tx](https://github.com/osafune/hdmi_tx)
 
 ## ライセンス
 
-このプロジェクト独自のRTLと文書はMIT Licenseです。TV80はMIT、JT49はGPL-3.0-or-laterです。JT49を含むbitstreamを再配布する場合は、GPL-3.0-or-laterの条件に従って対応するソースを提供してください。詳細と固定コミットは`THIRD_PARTY.md`を参照してください。
+このプロジェクト独自のRTLと文書はMIT Licenseです。TV80とhdmi_txはMIT、JT49はGPL-3.0-or-laterです。JT49を含むbitstreamを再配布する場合は、GPL-3.0-or-laterの条件に従って対応するソースを提供してください。詳細と固定コミットは`THIRD_PARTY.md`を参照してください。

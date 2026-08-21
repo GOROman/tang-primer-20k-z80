@@ -9,6 +9,10 @@ RAM_TEST_ADDR: equ 0FF00h
         di
         ld sp, 0FFFFh
 
+        ; Stage 1: Z80 started from boot ROM.
+        ld a, 020h
+        out (LED_PORT), a
+
         ld hl, RAM_TEST_ADDR
         ld (hl), 055h
         ld a, (hl)
@@ -20,9 +24,14 @@ RAM_TEST_ADDR: equ 0FF00h
         cp 0AAh
         jr nz, ram_fail
 
+        ; Stage 2: RAM read/write test passed.
+        ld a, 010h
+        out (LED_PORT), a
+
         jp APP_ENTRY
 
 ram_fail:
-        xor a
+        ; LED0 remains lit on RAM failure.
+        ld a, 001h
         out (LED_PORT), a
         jr ram_fail

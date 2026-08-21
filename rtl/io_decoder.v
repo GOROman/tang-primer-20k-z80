@@ -10,7 +10,8 @@ module io_decoder (
     output reg  [3:0]  psg_addr,
     output reg  [7:0]  psg_din,
     output reg         psg_wr,
-    output reg         debug_led,
+    output reg  [127:0] psg_regs,
+    output reg  [5:0]  debug_led,
     output reg  [7:0]  cpu_din
 );
     reg io_write_prev;
@@ -23,7 +24,8 @@ module io_decoder (
             psg_addr      <= 4'd0;
             psg_din       <= 8'd0;
             psg_wr        <= 1'b0;
-            debug_led     <= 1'b0;
+            psg_regs      <= 128'd0;
+            debug_led     <= 6'b000000;
         end else begin
             io_write_prev <= io_write;
             psg_wr        <= 1'b0;
@@ -34,8 +36,26 @@ module io_decoder (
                     8'hA1: begin
                         psg_din <= cpu_dout;
                         psg_wr  <= 1'b1;
+                        case (psg_addr)
+                            4'h0: psg_regs[7:0]     <= cpu_dout;
+                            4'h1: psg_regs[15:8]    <= cpu_dout;
+                            4'h2: psg_regs[23:16]   <= cpu_dout;
+                            4'h3: psg_regs[31:24]   <= cpu_dout;
+                            4'h4: psg_regs[39:32]   <= cpu_dout;
+                            4'h5: psg_regs[47:40]   <= cpu_dout;
+                            4'h6: psg_regs[55:48]   <= cpu_dout;
+                            4'h7: psg_regs[63:56]   <= cpu_dout;
+                            4'h8: psg_regs[71:64]   <= cpu_dout;
+                            4'h9: psg_regs[79:72]   <= cpu_dout;
+                            4'hA: psg_regs[87:80]   <= cpu_dout;
+                            4'hB: psg_regs[95:88]   <= cpu_dout;
+                            4'hC: psg_regs[103:96]  <= cpu_dout;
+                            4'hD: psg_regs[111:104] <= cpu_dout;
+                            4'hE: psg_regs[119:112] <= cpu_dout;
+                            4'hF: psg_regs[127:120] <= cpu_dout;
+                        endcase
                     end
-                    8'hB0: debug_led <= cpu_dout[0];
+                    8'hB0: debug_led <= cpu_dout[5:0];
                     default: ;
                 endcase
             end

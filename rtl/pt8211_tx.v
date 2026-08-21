@@ -40,6 +40,8 @@ module pt8211_tx (
             else
                 edge_acc <= edge_sum[24:0];
 
+            // Enable the amplifier only after the DAC clocks and zero-valued
+            // reset frames have been running for about 39 ms at 27 MHz.
             if (!pa_en) begin
                 amp_delay <= amp_delay + 20'd1;
                 if (&amp_delay)

@@ -7,7 +7,8 @@ LED_PORT: equ 0B0h
         org 02000h
 
 start:
-        ld a, 1
+        ; Stage 3: execution reached the RAM application.
+        ld a, 008h
         out (LED_PORT), a
 
         ; Enable tone A/B/C and disable noise A/B/C.
@@ -60,19 +61,31 @@ start:
         ld a, 12
         out (PSG_DATA), a
 
+        ; Stage 4: all PSG registers were initialized.
+        ld a, 004h
+        out (LED_PORT), a
+
         ; Keep register 8 selected and toggle channel A volume.
         ld a, 8
         out (PSG_ADDR), a
-        ld a, 15
+        ld d, 15
+        ld e, 2
 volume_loop:
+        ld a, d
         out (PSG_DATA), a
+        ; Stage 5: alternate LED1/LED0 in the continuous RAM loop.
+        ld a, e
+        out (LED_PORT), a
+        xor 3
+        ld e, a
+        ld a, d
         xor 7
-        push af
-        ld bc, 0
+        ld d, a
+        ; About 0.25 seconds at 3.375 MHz; no stack access is needed.
+        ld bc, 08000h
 delay_loop:
         dec bc
         ld a, b
         or c
         jr nz, delay_loop
-        pop af
         jr volume_loop

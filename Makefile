@@ -16,12 +16,13 @@ firmware:
 	python3 tools/bin2hex.py firmware/generated/psg_demo.bin firmware/generated/psg_demo.hex
 
 build: firmware
+	python3 tools/prepare_hdmi_tx.py
 	DYLD_LIBRARY_PATH=$(GOWIN_ROOT)/lib DYLD_FRAMEWORK_PATH=$(GOWIN_ROOT)/lib $(GOWIN_SH) run.tcl
 
 sim: firmware
-	cd rtl && iverilog -g2005 -o ../sim/top_sim \
+	cd rtl && iverilog -g2005 -DSIMULATION -o ../sim/top_sim \
 		../sim/tb_top.v reset_sync.v soc_memory.v io_decoder.v \
-		psg_wrapper.v audio_mixer.v pt8211_tx.v z80_soc.v top.v \
+		psg_wrapper.v audio_mixer.v pt8211_tx.v hdmi_psg_debug.v z80_soc.v top.v \
 		../third_party/tv80/rtl/core/tv80n.v \
 		../third_party/tv80/rtl/core/tv80_core.v \
 		../third_party/tv80/rtl/core/tv80_mcode.v \

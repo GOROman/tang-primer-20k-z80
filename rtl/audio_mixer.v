@@ -3,9 +3,9 @@ module audio_mixer (
     output wire [15:0] pcm_left,
     output wire [15:0] pcm_right
 );
-    // JT49's summed output is unipolar. Scale it to a safe positive 16-bit
-    // range; the Dock audio path removes the DC component.
-    wire [15:0] pcm = {1'b0, psg_sound, 5'b00000};
+    // JT49's summed output is unipolar. A gain of 3 gives about 9.4% of the
+    // previous x32 level; the Dock audio path removes the DC component.
+    wire [15:0] pcm = psg_sound * 16'd3;
 
     assign pcm_left  = pcm;
     assign pcm_right = pcm;

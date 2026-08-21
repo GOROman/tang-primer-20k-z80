@@ -4,3 +4,6 @@
 [submodule "third_party/tv80"]
 	path = third_party/tv80
 	url = https://github.com/hutch31/tv80.git
+[submodule "third_party/hdmi_tx"]
+	path = third_party/hdmi_tx
+	url = https://github.com/osafune/hdmi_tx.git

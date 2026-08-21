@@ -3,7 +3,9 @@ module z80_soc (
     input  wire        rst_n,
     output wire [15:0] pcm_left,
     output wire [15:0] pcm_right,
-    output wire        debug_led
+    output wire [5:0]  debug_led,
+    output wire [127:0] psg_regs,
+    output wire [3:0]  psg_selected
 );
     reg [2:0] cpu_div;
     wire clk_cpu = cpu_div[2];
@@ -23,6 +25,8 @@ module z80_soc (
     wire [7:0] psg_dout;
     wire       psg_wr;
     wire [9:0] psg_sound;
+
+    assign psg_selected = psg_addr;
 
     always @(posedge clk_sys or negedge rst_n) begin
         if (!rst_n)
@@ -79,6 +83,7 @@ module z80_soc (
         .psg_addr  (psg_addr),
         .psg_din   (psg_din),
         .psg_wr    (psg_wr),
+        .psg_regs  (psg_regs),
         .debug_led (debug_led),
         .cpu_din   (io_dout)
     );
