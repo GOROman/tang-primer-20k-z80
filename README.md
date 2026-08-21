@@ -1,28 +1,35 @@
 # Tang Primer 20K Z80 + PSG Sound System
 
-Tang Primer 20K Dock 上に、Z80 互換CPU、ROM、RAM、AY-3-8910/YM2149互換PSGを構成し、Z80プログラムからI/Oポート経由でPSGを演奏する小型SoCを実装するプロジェクトです。
+Tang Primer 20K Dock 上に、Z80 互換CPU、ROM、RAM、AY-3-8910/YM2149互換PSG×2を構成し、Z80プログラムからI/Oポート経由で演奏する小型SoCプロジェクトです。
 
-PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-bit PCMへ変換して、Dock搭載のPT8211ステレオDACから出力します。
+2基のPSGが生成した合計6チャンネルをFPGA内部でミックスし、16-bit PCMへ変換して、Dock搭載のPT8211ステレオDACから出力します。
 
 > [!IMPORTANT]
-> RTL実装、実アセンブル、シミュレーション、Gowinでのbitstream生成、GW2A-18へのSRAM転送、PT8211 DACからの実機発音まで確認済みです。
+> RTL実装、実アセンブル、シミュレーション、Gowinでのbitstream生成、GW2A-18へのSRAM転送、PT8211 DACからの実機発音まで確認済みです。今回追加したカウベル音色、HDMI画面、USB UVC列挙・映像は実機確認中です。
 
 ## 現在の実装状況
 
 - TV80 Z80互換CPUを3.375 MHzで動作
 - 8 KiB boot ROM + 56 KiB RAMを合計32個のBSRAMで構成
-- Z80 I/Oポート`A0h`/`A1h`からJT49 PSGを制御
+- Z80 I/Oポート`A0h`/`A1h`と`A2h`/`A3h`からJT49 PSG×2を独立制御
 - PSG出力を16-bitモノラルPCMへ変換し左右へ複製
 - 27 MHzからfractional dividerで48 kHz相当のPT8211信号を生成
 - `z80asm`でROMブートローダとRAM用PSGプログラムを実アセンブル
 - ROMでRAMテスト後、`JP 2000h`によりRAM上のプログラムを実行
-- RAMプログラムにCメジャー3音とChannel A音量変化を実装
-- Icarus VerilogでRAM実行、PSG書き込み11回、PT8211 BCKを確認済み
+- RAMプログラムにAm→F→C→Gを反復する80年代エレクトロ進行を実装
+- PSG1で3和音、PSG2で`+2`デチューンの8ステップリード、三角形ハードウェアエンベロープ、キック／スネア／ハイハット風ノイズを演奏
+- PSG2の約541 Hz／799 Hzへデチューンした矩形波を重ね、曲中にTR-808風カウベルを演奏
+- Icarus Verilogで両PSGへの書き込み、デチューン、エンベロープ再トリガー、ノイズ、PT8211 BCKを確認済み
+- HDMI VGA互換640×480p60画面にZ80のPC/AF/BC/DE/HL/SP/RとPSG1/PSG2の各R0〜RFを16進表示
+- DockのS2/S3で0〜100%の音量を10%刻みで調整（起動時10%）
+- USB3317 ULPI経由のUVC 1.1 WebCamとして同じ画面をYUY2 640×480p30で送信
 - Gowin EDA V1.9.11.03 Educationでbitstream生成済み
 - GW2A(R)-18(C)を検出し、bitstreamをSRAMへ転送済み
 - Z80のRAM上で動くアセンブリプログラムからPSGをI/Oポート経由で制御し、PT8211 DACの実機発音を確認済み
+- LED1/0交互点滅を確認済み
 
 DAC出力と実際の発音はTang Primer 20K Dock実機で確認済みです。
+今回追加したカウベル音色、HDMI画面の実機表示、PC上でのUSB UVC列挙・映像表示は未確認です。
 
 ## 目標
 
@@ -166,8 +173,17 @@ Z80のI/O空間は下位8 bitをデコードします。
 | `A0h` | W | PSGレジスタ番号を選択（0～15） |
 | `A1h` | W | 選択中のPSGレジスタへデータを書き込み |
 | `A1h` | R | 選択中のPSGレジスタを読み出し |
-| `B0h` | W | デバッグLED出力 |
+| `A2h` | W | PSG2レジスタ番号を選択（0～15） |
+| `A3h` | W | PSG2の選択中レジスタへデータを書き込み |
+| `A3h` | R | PSG2の選択中レジスタを読み出し |
+| `B0h` | W | デバッグLED5〜0出力（bit 5〜0、1で点灯） |
+| `C0h`〜`CBh` | W | HDMI用Z80スナップショット（PC、AF、BC、DE、HL、SP） |
 | その他 | - | 予約。読み出し値は`FFh` |
+
+診断ファームウェアは、`20h`（Boot ROM開始）、`10h`（RAM試験成功）、
+`08h`（RAMアプリ開始）、`04h`（PSG初期化完了）の順に表示し、
+メインループでは`02h`と`01h`を交互に出力してLED1/LED0を点滅させます。
+RAM試験に失敗した場合はLED0が点灯したままになります。
 
 I/Oライトパルスは、次の条件を27 MHzクロックへ同期させて1回だけ生成します。Z80の1回のバスサイクル中に同じPSGレジスタへ複数回書き込まないよう、前サイクルの状態を使って立ち上がりを検出します。
 
@@ -178,7 +194,7 @@ io_read  = !IORQ_n && !RD_n
 
 ## PSG
 
-PSGにはAY-3-8910/YM2149互換の[JT49](https://github.com/jotego/jt49)を採用しています。JT49の簡易インターフェースを使い、Z80側にアドレスラッチとデータポートを追加しています。
+PSGにはAY-3-8910/YM2149互換の[JT49](https://github.com/jotego/jt49)を2基採用しています。それぞれに独立したアドレスラッチとデータポートを割り当てます。
 
 ### PSGレジスタ
 
@@ -227,21 +243,24 @@ ld a, 0Fh
 out (PSG_DATA), a
 ```
 
-RAM上のPSGプログラムではA、B、C各チャンネルに異なる周期を設定し、Cメジャー相当の3音が連続して聞こえるテストを実装します。Z80が停止してもPSGレジスタの設定は保持されるため、音量の周期変化によってCPUがRAM上で継続動作していることを確認します。
+RAM上のプログラムはPSG1でAm→F→C→Gを繰り返す80年代エレクトロ進行を3和音で演奏します。PSG2のTone A/Bは8ステップのリードを周期`+2`で重ねてデチューンし、Volume register 8/9のエンベロープビットを使います。各音でEnvelope shape register 13に`0Eh`を書き、上下反復する三角形エンベロープを再トリガーします。発振波形自体はPSGの矩形波です。PSG2のChannel Cはノイズ専用で、Noise periodと音量を変えてキック、スネア、クローズド／オープンハイハット風の8ステップリズムを重ねます。
+
+各進行ループの最初のAmバー途中では、PSG2 Tone A/Bを周期`00C3h`（約541 Hz）と`0084h`（約799 Hz）へ一時的に切り替えます。2つの非整数比矩形波を固定音量で重ね、音量を`0Fh/0Dh`→`09h/07h`→`04h/03h`と段階的に下げてTR-808風カウベルを近似します。専用波形発振器やPCMサンプルは使用せず、カウベルもJT49 PSGのTone回路だけで生成します。
 
 ## 音声データパス
 
-JT49が生成する3チャンネル合成済み10-bit出力を、安全な範囲の16-bit unipolar PCMへスケーリングします。
+2基のJT49が生成する各10-bit出力を11-bitで加算し、16-bit unipolar PCMへスケーリングします。起動時の10%では合算後を3/2倍し、2基が同時に最大出力でもPCMピークは3069です。S2/S3で0〜100%を10%刻みに変更でき、最大時も16-bit範囲内に収めます。
 
 ```text
-JT49 tone/noise/envelope --> 10-bit summed sound --> 16-bit scale
-                                                --> L/R duplicate
+PSG1 tone A/B/C ----------+
+                          +--> 11-bit sum --> x3/2 --> 16-bit PCM --> L/R
+PSG2 melody A/B + noise C-+                 S2/S3 volume 0..100%
 ```
 
 初期版の方針：
 
 - 中間加算器にはガードビットを持たせる
-- 最大音量の3チャンネル同時発音でもオーバーフローさせない
+- 6チャンネル同時発音でもオーバーフローさせない
 - 無音時をPCMの`0000h`とする
 - 同一モノラルサンプルを左右チャンネルへ送る
 - `PA_EN`はリセット中Low、DACへ無音フレームを数回送った後にHighとする
@@ -262,15 +281,80 @@ Tang Primer 20K DockのPT8211へ次の3信号を出力します。
 
 PT8211は一般的なI2Sとはデータ位置やWSタイミングが異なるため、汎用I2S送信器をそのまま使わず、PT8211用シリアライザを使用します。DINはBCKのサンプリングエッジに対して十分なセットアップ時間を確保します。
 
+## HDMIデバッグ表示
+
+27 MHz入力からPLLで126 MHzを生成し、5分周した25.2 MHzを使って
+VGA互換640×480p60のデバッグ画面を出力します。左ペインにZ80、中央にPSG1、右ペインにPSG2を配置します。Z80欄は`PC`、`AF`、`BC`、`DE`、`HL`、`SP`、`R`と音量、下段は`RAM:2000`として`2000h`〜`200Fh`の16バイト、PSG欄はそれぞれ`R0:xx`〜`RF:xx`を縦16行で表示します。
+
+RAM表示範囲は本体RAMと同じHEXで初期化した16-byte診断ミラーで、Z80が`2000h`〜`200Fh`へ書く場合も本体と同時更新します。RAM全体へ第2読み出しポートを追加せず、Gowin BSRAMの対応モードを維持します。
+
+AF/BC/DE/HL/SPはRAM上の演奏プログラムがI/Oポート`C0h`〜`CBh`へ周期的に書く一貫したスナップショットです。PCはTV80のM1命令フェッチアドレスをハードウェアで追跡するため、実行位置に応じて変化します。Rは各M1サイクルで下位7bitを加算しbit 7を保持するZ80互換リフレッシュカウンタです。
+
+USB UVC出力は現在PSG1のレジスタ画面のみを使い、非圧縮YUY2 640×480p30として送出します。
+
+TMDSエンコードとGW2A OSER10シリアライザにはMITライセンスの
+[osafune/hdmi_tx](https://github.com/osafune/hdmi_tx)を使用します。
+
+| 信号 | FPGAピンペア | 内容 |
+| --- | --- | --- |
+| `O_tmds_clk_p` | `G16,H15` | TMDS clock |
+| `O_tmds_data_p[0]` | `H14,H16` | TMDS data 0 |
+| `O_tmds_data_p[1]` | `J15,K16` | TMDS data 1 |
+| `O_tmds_data_p[2]` | `K14,K15` | TMDS data 2 |
+
+## USB HOST/OTG端子のWebCam出力
+
+Dock上で「USB HOST」と表記されるUSB3317接続端子を、PC接続時にはUSB 2.0
+High-Speed UVC Deviceとして使用します。USB機能スライドスイッチをDevice/OTG側へ
+設定してからPCへ接続してください。JTAG/UART用Type-C端子とは別の端子です。
+
+- UVC version: 1.1
+- Format: YUY2、640×480、16 bit/pixel
+- Frame interval: 333,333×100 ns（約30 fps）
+- Transfer: High-Speed Bulk IN、Endpoint `81h`、最大512 byte
+- Payload: 各USBパケットの先頭に2-byte UVCヘッダ、FID/EOF付き
+- USB PHY: Dock搭載USB3317、60 MHz ULPI
+
+`rtl/generated/usb_uvc_core.v`はLUNA 0.2.3から生成した固定Verilogです。通常の
+GowinビルドではPython依存関係は不要です。コアを再生成する場合だけ、Python仮想環境で
+次を実行します。
+
+```sh
+python3 -m pip install -r tools/requirements-uvc.txt
+make uvc-core
+```
+
+UVCパケット生成の単体テストは次のとおりです。
+
+```sh
+make sim-uvc
+```
+
+テストは1フレームについて、1205パケット、614,400映像byte、合計616,810 byte、
+YUY2先頭画素、EOFヘッダを確認します。
+
+| ULPI信号 | FPGAピン |
+| --- | --- |
+| `ulpi_clk` | `T15` |
+| `ulpi_dir` / `ulpi_nxt` / `ulpi_stp` | `K12` / `K13` / `K11` |
+| `ulpi_rst` | `F10` |
+| `ulpi_data[7:0]` | `R12,P13,R13,T14,H13,J12,H12,G11` |
+
+USB診断中は起動後のLED5/4/3をULPI状態表示にも使います。LED5は60 MHz
+ULPIクロック検出、LED4はDIRを一度でも検出、LED3はNXTを一度でも検出すると点灯を保持します。
+LED1/0の交互点滅は従来どおりZ80 RAMプログラムの動作表示です。
+
 ## その他のピン割り当て
 
 | 信号 | FPGAピン | 備考 |
 | --- | --- | --- |
 | `clk` | `H11` | 27 MHz |
-| `rst_n` | `T3` | Sipeed PT8211サンプルに合わせたリセット入力 |
-| `led` | `L16` | Active-lowデバッグLED |
+| `rst_n` | `T10` | DockのS0スイッチ、Active-Lowリセット入力 |
+| `vol_down_n` | `T2` | DockのS2、音量を10%下げる、Active-Low |
+| `vol_up_n` | `D7` | DockのS3、音量を10%上げる、Active-Low |
+| `led[5:0]` | `L16,L14,N14,N16,A13,C13` | DockのLED5〜0、Active-lowデバッグLED |
 
-現在の制約は、Sipeed公式PT8211サンプルに合わせて`rst_n=T3`を採用しています。別資料には`T10`の記載もあるため、手元のDockでリセットボタンが反応しない場合は、基板版と回路図を確認します。
+S0を押している間はZ80、RAM制御、PSG、PT8211送信器をリセットし、離してから1024システムクロック待ってZ80を`0000h`から再起動します。S2/S3は20 msデバウンス後、押下1回につき音量を1段階変更し、離すまで再入力しません。
 
 ## リセットシーケンス
 
@@ -301,12 +385,12 @@ PT8211は一般的なI2Sとはデータ位置やWSタイミングが異なるた
 
 1. デバッグLEDを点灯
 2. PSGレジスタを初期化
-3. Tone A/B/CへC4/E4/G4を設定
-4. CPUレジスタのカウンタで一定時間待つ
-5. Channel Aの音量を15と8の間で変更
-6. ループ
+3. PSG1のTone A/B/Cでカノン進行の3和音を設定
+4. PSG2のTone A/Bで`+2`デチューンのメロディを演奏
+5. 各音で減衰エンベロープを再トリガー
+6. PSG2のNoise Cでキック／スネア／ハイハット風8ステップリズムを重ねてループ
 
-`make firmware`は両ソースを実際に`z80asm`でアセンブルします。生成された29バイトのROMイメージを`0000h`、106バイトのPSGプログラムを`2000h`からBlock RAMへ初期配置します。
+`make firmware`は両ソースを実際に`z80asm`でアセンブルします。生成された38バイトのROMイメージを`0000h`、420バイトのPSGプログラムを`2000h`からBlock RAMへ初期配置します。PSG用HEXはRAM領域全体の56 KiBへ自動的にゼロ埋めするため、アプリが増えても固定バイト数で途切れません。
 
 ## 想定ディレクトリ構成
 
@@ -374,14 +458,48 @@ make firmware
 make build GOWIN_ROOT=/path/to/Gowin_EDA/IDE
 ```
 
+### Mac Studioでのリモート実行
+
+SSH接続可能なMac Studioへソースを同期し、重い合成やシミュレーションを
+リモート実行できます。既定ホストは`mac-studio.local`、作業先は
+`/tmp/tang-primer-20k-z80-remote`です。秘密鍵や認証情報は同期しません。
+
+```sh
+make remote-build
+make remote-sim
+make remote-sim-uvc
+make remote-deploy
+```
+
+`remote-build`は成功後にアセンブル済みHEX、`project.fs`、配置配線レポートを
+ローカルへ回収します。`remote-sim`もアセンブル済みHEXを回収します。
+`remote-deploy`はフルSoCシミュレーション、合成、
+成果物回収、ローカル接続されたFPGAの検出、SRAM転送までを順番に実行します。
+接続先や作業先は必要に応じて変更できます。
+
+```sh
+make remote-build REMOTE_HOST=mac-studio.local \
+  REMOTE_DIR=/tmp/tang-primer-20k-z80-remote
+```
+
+Mac Studio側にはGowin EDA、Homebrew版`z80asm`、シミュレーション時は
+Homebrew版`iverilog`が必要です。
+
 生成されるbitstreamは`impl/pnr/project.fs`です。`impl/`は生成物なのでGit管理しません。
 
 ボードを接続した後、デバイスを確認してSRAMへ転送します。
 
 ```sh
 openFPGALoader --detect
-openFPGALoader --write-sram --reset -b tangprimer20k impl/pnr/project.fs
+openFPGALoader --write-sram -b tangprimer20k impl/pnr/project.fs
 ```
+
+> **重要:** SRAM転送に`--reset`を付けてはいけません。
+> `openFPGALoader --reset`は操作後にFPGAをリセットするため、SRAMへ転送した
+> 新しい構成が破棄され、Flash内の旧ビットストリームへ戻ります。
+> 転送ログが100%および`DONE`でも、実機では旧版が動くため注意してください。
+> S0はT10に接続したSoC内のActive-Lowリセットなので、SRAM転送後の
+> Z80再起動にはS0を使用します。
 
 検出結果がTang Primer 20K/GW2A-18でない場合は書き込まないでください。
 
@@ -389,9 +507,10 @@ Icarus Verilogがインストール済みなら、次のコマンドでSoCテス
 
 ```sh
 make sim
+make sim-uvc
 ```
 
-テストは、ROM上のRAMテスト、`2000h`からのRAMコード実行、PSGレジスタ書き込み回数、PT8211 BCKの発生を検査します。
+`make sim`はROM上のRAMテスト、`2000h`からのRAMコード実行、両PSGのシャドウ値、Z80レジスタスナップショット、S2/S3音量操作、デチューン差、エンベロープ再トリガー、ノイズ、PT8211 BCK、PA_EN、PCMピークを検査します。`make sim-uvc`はUVC/YUY2パケット境界とフレーム長を検査します。
 
 ## 実装ステップ
 
@@ -485,7 +604,9 @@ make sim
 - [JT49 YM2149-compatible PSG core](https://github.com/jotego/jt49)
 - [T80 Z80-compatible core](https://opencores.org/projects/t80)
 - [TV80 Z80-compatible core](https://github.com/hutch31/tv80)
+- [osafune/hdmi_tx](https://github.com/osafune/hdmi_tx)
+- [Great Scott Gadgets LUNA](https://github.com/greatscottgadgets/luna)
 
 ## ライセンス
 
-このプロジェクト独自のRTLと文書はMIT Licenseです。TV80はMIT、JT49はGPL-3.0-or-laterです。JT49を含むbitstreamを再配布する場合は、GPL-3.0-or-laterの条件に従って対応するソースを提供してください。詳細と固定コミットは`THIRD_PARTY.md`を参照してください。
+このプロジェクト独自のRTLと文書はMIT Licenseです。TV80とhdmi_txはMIT、LUNAはBSD-3-Clause、JT49はGPL-3.0-or-laterです。JT49を含むbitstreamを再配布する場合は、GPL-3.0-or-laterの条件に従って対応するソースを提供してください。詳細と固定コミットは`THIRD_PARTY.md`を参照してください。
