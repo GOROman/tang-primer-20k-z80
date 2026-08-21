@@ -49,12 +49,12 @@ DockなしでCore Board単体を使う場合は、PT8211または互換DAC、ロ
                   +---------v---------+
                   | clock / reset     |
                   | clk_sys = 27 MHz  |
-                  | Z80 clock enable  |
+                  | Z80 clock divider |
                   | PSG clock enable  |
                   | 48 kHz sample CE  |
                   +----+-----------+--+
                        |           |
-              3.375 MHz CE        |
+              3.375 MHz clock     |
                        |           |
                 +------v------+    |
                 | Z80 core    |    |
@@ -75,7 +75,7 @@ DockなしでCore Board単体を使う場合は、PT8211または互換DAC、ロ
                                   v
                            +------+-------+
                            | mixer / gain |
-                           | signed 16-bit|
+                           | 16-bit PCM   |
                            +------+-------+
                                   | 48 kHz PCM
                            +------v-------+
@@ -91,30 +91,23 @@ DockなしでCore Board単体を使う場合は、PT8211または互換DAC、ロ
 
 ## クロック設計
 
-FPGA内部は原則として27 MHzの単一クロックドメインで動作させ、低い周波数が必要なブロックには分周クロックではなくクロックイネーブルを与えます。これにより、クロックドメイン間の受け渡しを減らし、タイミング制約を単純にします。
+メモリ、I/O、PSG、PT8211送信器は27 MHzで動作します。TV80のラッパーはclock enable入力を持たないため、3-bitカウンタで生成した3.375 MHzクロックを与え、SDCで27 MHzからのdivide-by-8 generated clockとして制約しています。PSG内部には27 MHzから生成したclock enableを与えます。
 
 | 用途 | 周波数 | 生成方法 |
 | --- | ---: | --- |
 | システムクロック | 27 MHz | `clk`入力を直接使用 |
-| Z80 | 3.375 MHz | 27 MHzを8分周した1サイクルのclock enable |
+| Z80 | 3.375 MHz | 27 MHzを8分周した派生クロック |
 | PSG基準 | 1.6875 MHz | 27 MHzを16分周したclock enable |
-| PCMサンプル更新 | 48 kHz | 位相アキュムレータによるclock enable |
+| PCMサンプル更新 | 48 kHz | PT8211の32-bitフレーム境界 |
 | PT8211 BCK | 1.536 MHz | PLLまたは位相アキュムレータで生成 |
 
-Z80コアがクロックイネーブル入力を持たない場合は、まずコアの推奨接続に従います。派生クロックを使用する場合はGowinの専用クロック分周器を使い、通常の組み合わせ回路でクロックを作りません。
+Z80クロックはレジスタ出力から生成し、Gowinのグローバルクロック資源へ配置されています。今後PLLや専用CLKDIVへ変更する場合も、`clk_cpu`のgenerated clock制約を維持します。
 
 48 kHz × 32 bit = 1.536 MHzのBCKで、左右それぞれ16 bitを送信します。PSGはモノラルなので、同じサンプルを左右へ送ります。
 
 ## Z80コア
 
-初期実装では、実績のあるVerilog/VHDLのZ80互換コアを外部IPとして組み込みます。
-
-候補：
-
-- [T80](https://opencores.org/projects/t80): Z80/Z180互換コア
-- [TV80](https://github.com/hutch31/tv80): Verilog実装のZ80互換コア
-
-採用前に、Gowin EDAでの合成可否、ライセンス、リセット極性、バス信号のタイミングを確認します。外部IPは`rtl/cpu/`へ配置し、出典、取得時のコミットID、ライセンスを`THIRD_PARTY.md`に記録します。
+Z80互換コアには[TV80](https://github.com/hutch31/tv80)の`tv80n`を採用しています。MITライセンスの固定コミットを`third_party/tv80` submoduleとして組み込み、Gowin EDAで合成できることを確認済みです。出典と固定コミットは`THIRD_PARTY.md`に記録しています。
 
 必要なCPU信号は次のとおりです。
 
@@ -169,7 +162,7 @@ Z80のI/O空間は下位8 bitをデコードします。
 | `A0h` | W | PSGレジスタ番号を選択（0～15） |
 | `A1h` | W | 選択中のPSGレジスタへデータを書き込み |
 | `A1h` | R | 選択中のPSGレジスタを読み出し |
-| `B0h` | W | デバッグLED出力（将来実装） |
+| `B0h` | W | デバッグLED出力 |
 | その他 | - | 予約。読み出し値は`FFh` |
 
 I/Oライトパルスは、次の条件を27 MHzクロックへ同期させて1回だけ生成します。Z80の1回のバスサイクル中に同じPSGレジスタへ複数回書き込まないよう、前サイクルの状態を使って立ち上がりを検出します。
@@ -181,7 +174,7 @@ io_read  = !IORQ_n && !RD_n
 
 ## PSG
 
-PSGはAY-3-8910/YM2149互換の[JT49](https://github.com/jotego/jt49)を第一候補とします。JT49の簡易インターフェースを使い、Z80側にはアドレスラッチとデータポートを追加します。
+PSGにはAY-3-8910/YM2149互換の[JT49](https://github.com/jotego/jt49)を採用しています。JT49の簡易インターフェースを使い、Z80側にアドレスラッチとデータポートを追加しています。
 
 ### PSGレジスタ
 
@@ -234,12 +227,11 @@ out (PSG_DATA), a
 
 ## 音声データパス
 
-JT49は各チャンネルの振幅を出力します。3チャンネルを十分なビット幅で加算し、クリッピングを避けてsigned 16-bit PCMへ変換します。
+JT49が生成する3チャンネル合成済み10-bit出力を、安全な範囲の16-bit unipolar PCMへスケーリングします。
 
 ```text
-Channel A --+
-Channel B --+--> unsigned mixer --> DC center/scale --> signed 16-bit
-Channel C --+                                      --> L/R duplicate
+JT49 tone/noise/envelope --> 10-bit summed sound --> 16-bit scale
+                                                --> L/R duplicate
 ```
 
 初期版の方針：
@@ -271,8 +263,8 @@ PT8211は一般的なI2Sとはデータ位置やWSタイミングが異なるた
 | 信号 | FPGAピン | 備考 |
 | --- | --- | --- |
 | `clk` | `H11` | 27 MHz |
-| `rst_n` | `T10` | Dockのリセット。基板版と回路図を再確認すること |
-| `led` | 未確定 | 制約作成時にDock/Core Board版を確認する |
+| `rst_n` | `T3` | Sipeed PT8211サンプルに合わせたリセット入力 |
+| `led` | `L16` | Active-lowデバッグLED |
 
 現在の制約は、Sipeed公式PT8211サンプルに合わせて`rst_n=T3`を採用しています。別資料には`T10`の記載もあるため、手元のDockでリセットボタンが反応しない場合は、基板版と回路図を確認します。
 
@@ -294,10 +286,10 @@ PT8211は一般的なI2Sとはデータ位置やWSタイミングが異なるた
 1. 割り込み禁止
 2. SPを`FFFFh`へ設定
 3. RAMの先頭数バイトへテストパターンを書き込んで読み戻す
-4. 成功時はデバッグLEDを点灯、失敗時は高速点滅
+4. 成功時はデバッグLEDを点灯、失敗時は消灯
 5. PSGレジスタを初期化
 6. Tone A/B/Cへ3音を設定
-7. RAM上のカウンタで一定時間待つ
+7. CPUレジスタのカウンタで一定時間待つ
 8. 音程または音量を変更して、Z80が継続動作していることを示す
 9. ループ
 
@@ -309,30 +301,26 @@ RAMテストとPSG更新を同じプログラムで行うことで、単なる�
 .
 ├── README.md
 ├── THIRD_PARTY.md
+├── Makefile
 ├── project.gprj
+├── run.tcl
 ├── constraints/
 │   ├── tang_primer_20k.cst
 │   └── tang_primer_20k.sdc
 ├── rtl/
 │   ├── top.v
-│   ├── clock_reset.v
+│   ├── reset_sync.v
 │   ├── z80_soc.v
-│   ├── memory_map.v
+│   ├── soc_memory.v
 │   ├── io_decoder.v
 │   ├── psg_wrapper.v
 │   ├── audio_mixer.v
-│   ├── pt8211_tx.v
-│   ├── cpu/
-│   └── psg/
+│   └── pt8211_tx.v
 ├── firmware/
 │   ├── boot.asm
-│   ├── boot.bin
 │   └── boot.hex
-├── tools/
-│   └── bin2hex.py
 └── sim/
-    ├── tb_z80_soc.v
-    └── tb_pt8211_tx.v
+    └── tb_top.v
 ```
 
 この構成で初期RTL、起動ROM、制約、Gowinプロジェクト、テストベンチを実装済みです。
