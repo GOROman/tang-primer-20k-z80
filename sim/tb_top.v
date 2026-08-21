@@ -33,6 +33,9 @@ module tb_top;
     reg saw_hat_noise = 1'b0;
     reg saw_noise_enable = 1'b0;
     reg saw_envelope_shape = 1'b0;
+    reg saw_cowbell_tone_a = 1'b0;
+    reg saw_cowbell_tone_b = 1'b0;
+    reg saw_cowbell_attack = 1'b0;
     reg saw_volume_zero = 1'b0;
     reg saw_volume_restore = 1'b0;
     reg saw_z80_snapshot = 1'b0;
@@ -74,6 +77,15 @@ module tb_top;
         if ((dut.u_soc.u_io.psg2_addr == 4'd13) &&
             (dut.u_soc.u_io.psg2_din == 8'h0E))
             saw_envelope_shape = 1'b1;
+        if ((dut.u_soc.u_io.psg2_addr == 4'd0) &&
+            (dut.u_soc.u_io.psg2_din == 8'hC3))
+            saw_cowbell_tone_a = 1'b1;
+        if ((dut.u_soc.u_io.psg2_addr == 4'd2) &&
+            (dut.u_soc.u_io.psg2_din == 8'h84))
+            saw_cowbell_tone_b = 1'b1;
+        if ((dut.u_soc.u_io.psg2_addr == 4'd8) &&
+            (dut.u_soc.u_io.psg2_din == 8'h0F))
+            saw_cowbell_attack = 1'b1;
     end
 
     always @(posedge hp_bck)
@@ -171,6 +183,13 @@ module tb_top;
             $display("FAIL: Z80 did not retrigger PSG2 envelope shape");
             $finish;
         end
+        if (!(saw_cowbell_tone_a && saw_cowbell_tone_b &&
+              saw_cowbell_attack)) begin
+            $display("FAIL: missing PSG cowbell A=%0d B=%0d attack=%0d",
+                     saw_cowbell_tone_a, saw_cowbell_tone_b,
+                     saw_cowbell_attack);
+            $finish;
+        end
         if (!(saw_volume_zero && saw_volume_restore) ||
             (dut.u_soc.volume_level != 1)) begin
             $display("FAIL: volume buttons zero=%0d restore=%0d level=%0d",
@@ -196,13 +215,13 @@ module tb_top;
             $display("FAIL: PA_EN did not become active");
             $finish;
         end
-        if ((dut.u_soc.psg_regs[7:0] != 8'h93) ||
+        if ((dut.u_soc.psg_regs[7:0] != 8'hDF) ||
             (dut.u_soc.psg_regs[15:8] != 8'h01) ||
             (dut.u_soc.psg_regs[63:56] != 8'h38) ||
             (dut.u_soc.psg_regs[71:64] != 8'h07) ||
             (dut.u_soc.psg_regs[79:72] != 8'h06) ||
             (dut.u_soc.psg_regs[87:80] != 8'h06)) begin
-            $display("FAIL: PSG1 shadow registers do not match canon chord");
+            $display("FAIL: PSG1 shadow registers do not match electro chord");
             $finish;
         end
         if ((dut.u_soc.psg2_regs[63:56] != 8'h1C) ||
@@ -229,7 +248,7 @@ module tb_top;
             $finish;
         end
 
-        $display("PASS: RAM=yes DUMP=%08x PSG1=%0d PSG2=%0d Z80PC=%04x SP=%04x R=%02x PCchg=%0d Rchg=%0d VOL=%0d detune=yes triangle-envelope=yes drums=yes LED=%0d BCK=%0d PCM=%0d",
+        $display("PASS: RAM=yes DUMP=%08x PSG1=%0d PSG2=%0d Z80PC=%04x SP=%04x R=%02x PCchg=%0d Rchg=%0d VOL=%0d detune=yes triangle-envelope=yes drums=yes cowbell=yes LED=%0d BCK=%0d PCM=%0d",
                  dut.u_soc.ram_dump[31:0],
                  psg1_writes, psg2_writes, dut.u_soc.z80_regs[15:0],
                  dut.u_soc.z80_regs[95:80], dut.u_soc.z80_r,
