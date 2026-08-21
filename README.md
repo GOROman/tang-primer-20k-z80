@@ -5,7 +5,7 @@ Tang Primer 20K Dock 上に、Z80 互換CPU、ROM、RAM、AY-3-8910/YM2149互換
 PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-bit PCMへ変換して、Dock搭載のPT8211ステレオDACから出力します。
 
 > [!IMPORTANT]
-> RTL実装、実アセンブル、シミュレーション、Gowinでのbitstream生成、GW2A-18へのSRAM転送まで完了しています。実機での発音確認はまだ完了していません。
+> RTL実装、実アセンブル、シミュレーション、Gowinでのbitstream生成、GW2A-18へのSRAM転送、PT8211 DACからの実機発音まで確認済みです。
 
 ## 現在の実装状況
 
@@ -20,8 +20,9 @@ PSGが生成した3チャンネルの音声をFPGA内部でミックスし、16-
 - Icarus VerilogでRAM実行、PSG書き込み11回、PT8211 BCKを確認済み
 - Gowin EDA V1.9.11.03 Educationでbitstream生成済み
 - GW2A(R)-18(C)を検出し、bitstreamをSRAMへ転送済み
+- Z80のRAM上で動くアセンブリプログラムからPSGをI/Oポート経由で制御し、PT8211 DACの実機発音を確認済み
 
-未確認項目はDAC信号の実測と実際の発音です。
+DAC出力と実際の発音はTang Primer 20K Dock実機で確認済みです。
 
 ## 目標
 
