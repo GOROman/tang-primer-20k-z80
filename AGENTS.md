@@ -2,6 +2,24 @@
 
 ## Tang Primer 20K programming safety
 
+## Default remote verification and build flow
+
+- Run the full SoC simulation and Gowin synthesis/place-and-route on the Mac
+  Studio over SSH. Do not run these heavy jobs locally unless the remote host
+  is unavailable and the user explicitly agrees to the fallback.
+- The default remote host is `mac-studio.local`, and the disposable work tree
+  is `/tmp/tang-primer-20k-z80-remote`.
+- Use `make remote-sim` for the full simulation and `make remote-build` for the
+  FPGA build. A successful remote build must fetch `impl/pnr/project.fs` and
+  `impl/pnr/project.rpt.txt` back into this checkout.
+- The normal end-to-end command is `make remote-deploy`: remote simulation,
+  remote build, local artifact recovery, local FPGA detection, then volatile
+  SRAM programming.
+- Keep the FPGA programmer local because the Tang Primer 20K is connected to
+  this MacBook. Never attempt FPGA programming on the Mac Studio.
+- Record the recovered bitstream SHA-256 before or after programming, and keep
+  simulation/build/transfer/hardware-observation results distinct.
+
 - Always detect the connected FPGA before programming:
 
   ```sh

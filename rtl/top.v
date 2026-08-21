@@ -1,6 +1,8 @@
 module top (
     input  wire clk,
     input  wire rst_n,
+    input  wire vol_down_n,
+    input  wire vol_up_n,
     output wire [5:0] led,
     output wire PA_EN,
     output wire HP_DIN,
@@ -23,6 +25,12 @@ module top (
     wire [5:0] debug_led;
     wire [127:0] psg_regs;
     wire [3:0] psg_selected;
+    wire [127:0] psg2_regs;
+    wire [3:0] psg2_selected;
+    wire [95:0] z80_regs;
+    wire [7:0] z80_r;
+    wire [127:0] ram_dump;
+    wire [3:0] volume_level;
     wire usb_clock_alive;
     wire usb_dir_seen;
     wire usb_nxt_seen;
@@ -36,11 +44,19 @@ module top (
     z80_soc u_soc (
         .clk_sys   (clk),
         .rst_n     (reset_n_int),
+        .vol_down_n(vol_down_n),
+        .vol_up_n  (vol_up_n),
         .pcm_left  (pcm_left),
         .pcm_right (pcm_right),
         .debug_led (debug_led),
         .psg_regs  (psg_regs),
-        .psg_selected (psg_selected)
+        .psg_selected (psg_selected),
+        .psg2_regs (psg2_regs),
+        .psg2_selected (psg2_selected),
+        .z80_regs (z80_regs),
+        .z80_r    (z80_r),
+        .ram_dump (ram_dump),
+        .volume_level(volume_level)
     );
 
     pt8211_tx u_audio_tx (
@@ -74,6 +90,12 @@ module top (
         .rst_n         (reset_n_int),
         .psg_regs      (psg_regs),
         .psg_selected  (psg_selected),
+        .psg2_regs     (psg2_regs),
+        .psg2_selected (psg2_selected),
+        .z80_regs      (z80_regs),
+        .z80_r         (z80_r),
+        .ram_dump      (ram_dump),
+        .volume_level  (volume_level),
         .tmds_clk_p    (O_tmds_clk_p),
         .tmds_clk_n    (O_tmds_clk_n),
         .tmds_data_p   (O_tmds_data_p),

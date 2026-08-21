@@ -1,7 +1,9 @@
 GOWIN_ROOT ?= /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE
 GOWIN_SH ?= $(GOWIN_ROOT)/bin/gw_sh
+REMOTE_HOST ?= mac-studio.local
+REMOTE_DIR ?= /tmp/tang-primer-20k-z80-remote
 
-.PHONY: init firmware uvc-core build sim sim-uvc clean
+.PHONY: init firmware uvc-core build sim sim-uvc remote-build remote-sim remote-sim-uvc remote-deploy clean
 
 init:
 	git submodule update --init --recursive
@@ -44,6 +46,19 @@ sim-uvc:
 	cd rtl && iverilog -g2005 -o ../sim/uvc_sim \
 		../sim/tb_usb_uvc_stream.v psg_debug_pixel.v usb_uvc_stream.v
 	cd rtl && vvp ../sim/uvc_sim
+
+remote-build:
+	REMOTE_HOST="$(REMOTE_HOST)" REMOTE_DIR="$(REMOTE_DIR)" tools/remote_run.sh build
+
+remote-sim:
+	REMOTE_HOST="$(REMOTE_HOST)" REMOTE_DIR="$(REMOTE_DIR)" tools/remote_run.sh sim
+
+remote-sim-uvc:
+	REMOTE_HOST="$(REMOTE_HOST)" REMOTE_DIR="$(REMOTE_DIR)" tools/remote_run.sh sim-uvc
+
+remote-deploy: remote-sim remote-build
+	openFPGALoader --detect
+	openFPGALoader --write-sram -b tangprimer20k impl/pnr/project.fs
 
 clean:
 	rm -rf impl

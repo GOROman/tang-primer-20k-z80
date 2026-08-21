@@ -1,9 +1,24 @@
-; PSG demo program executed from Block RAM at 2000h.
-; Plays C - Am - F - G with a four-beat noise rhythm.
+; Dual-PSG demo program executed from Block RAM at 2000h.
+; PSG1 plays the Pachelbel-style canon progression in C major.
+; PSG2 plays a detuned, envelope-shaped melody plus a noise rhythm.
 
-PSG_ADDR: equ 0A0h
-PSG_DATA: equ 0A1h
-LED_PORT: equ 0B0h
+PSG1_ADDR: equ 0A0h
+PSG1_DATA: equ 0A1h
+PSG2_ADDR: equ 0A2h
+PSG2_DATA: equ 0A3h
+LED_PORT:  equ 0B0h
+DBG_PC_L:  equ 0C0h
+DBG_PC_H:  equ 0C1h
+DBG_A:     equ 0C2h
+DBG_F:     equ 0C3h
+DBG_B:     equ 0C4h
+DBG_C:     equ 0C5h
+DBG_D:     equ 0C6h
+DBG_E:     equ 0C7h
+DBG_H:     equ 0C8h
+DBG_L:     equ 0C9h
+DBG_SP_L:  equ 0CAh
+DBG_SP_H:  equ 0CBh
 
         org 02000h
 
@@ -12,57 +27,97 @@ start:
         ld a, 008h
         out (LED_PORT), a
 
-        ; Enable Tone A/B/C and disable Noise A/B/C between drum hits.
+        ; PSG1: all three tone channels, no noise.
         ld a, 7
-        out (PSG_ADDR), a
+        out (PSG1_ADDR), a
         ld a, 038h
-        out (PSG_DATA), a
-
-        ; Base chord volumes. Channel A also carries each noise hit.
+        out (PSG1_DATA), a
         ld a, 8
-        out (PSG_ADDR), a
+        out (PSG1_ADDR), a
+        ld a, 7
+        out (PSG1_DATA), a
+        ld a, 9
+        out (PSG1_ADDR), a
+        ld a, 6
+        out (PSG1_DATA), a
         ld a, 10
-        out (PSG_DATA), a
-        ld a, 9
-        out (PSG_ADDR), a
-        ld a, 9
-        out (PSG_DATA), a
-        ld a, 10
-        out (PSG_ADDR), a
-        ld a, 9
-        out (PSG_DATA), a
+        out (PSG1_ADDR), a
+        ld a, 6
+        out (PSG1_DATA), a
 
-        ; Stage 4: PSG initialization completed.
+        ; PSG2: Tone A/B for detuned melody, Noise C for rhythm.
+        ; Mixer 1Ch = Tone A/B on, Tone C off, Noise A/B off, Noise C on.
+        ld a, 7
+        out (PSG2_ADDR), a
+        ld a, 01Ch
+        out (PSG2_DATA), a
+
+        ; Melody A/B use the shared hardware envelope.
+        ld a, 8
+        out (PSG2_ADDR), a
+        ld a, 010h
+        out (PSG2_DATA), a
+        ld a, 9
+        out (PSG2_ADDR), a
+        ld a, 010h
+        out (PSG2_DATA), a
+        ld a, 10
+        out (PSG2_ADDR), a
+        xor a
+        out (PSG2_DATA), a
+
+        ; Repeating triangle envelope (shape 0Eh), retriggered every note.
+        ; The tone carrier remains PSG square wave; only amplitude is shaped.
+        ld a, 11
+        out (PSG2_ADDR), a
+        xor a
+        out (PSG2_DATA), a
+        ld a, 12
+        out (PSG2_ADDR), a
+        ld a, 1
+        out (PSG2_DATA), a
+
+        ; Stage 4: both PSGs initialized. E toggles LED1/LED0 per beat.
         ld a, 004h
         out (LED_PORT), a
         ld e, 2
 
-progression_loop:
-        ld hl, chord_c
+canon_loop:
+        ld hl, canon_c
         call set_chord
         call play_bar
-
-        ld hl, chord_am
+        ld hl, canon_g
         call set_chord
         call play_bar
-
-        ld hl, chord_f
+        ld hl, canon_am
         call set_chord
         call play_bar
-
-        ld hl, chord_g
+        ld hl, canon_em
         call set_chord
         call play_bar
-        jr progression_loop
+        ld hl, canon_f1
+        call set_chord
+        call play_bar
+        ld hl, canon_c2
+        call set_chord
+        call play_bar
+        ld hl, canon_f2
+        call set_chord
+        call play_bar
+        ld hl, canon_g2
+        call set_chord
+        call play_bar
+        jr canon_loop
 
-; Write six bytes from HL to PSG tone-period registers 0 through 5.
+; Write six bytes from HL to PSG1 tone-period registers 0 through 5.
+; HL then points at eight melody/noise/drum steps for play_bar.
 set_chord:
         ld b, 0
 set_chord_loop:
         ld a, b
-        out (PSG_ADDR), a
+        out (PSG1_ADDR), a
         ld a, (hl)
-        out (PSG_DATA), a
+        out (PSG1_DATA), a
         inc hl
         inc b
         ld a, b
@@ -70,64 +125,151 @@ set_chord_loop:
         jr nz, set_chord_loop
         ret
 
-; Four noise hits per chord. Beat 1 is brighter and louder.
 play_bar:
-        call noise_accent
-        call noise_tick
-        call noise_tick
-        call noise_tick
+        ; Eight driving steps. Each table entry is melody period,
+        ; noise period, then drum volume.
+        call play_step
+        call play_step
+        call play_step
+        call play_step
+        call play_step
+        call play_step
+        call play_step
+        call play_step
         ret
 
-noise_accent:
-        ld a, 5
+play_step:
+        call set_detuned_melody
+        ld a, (hl)
+        inc hl
+        ld b, (hl)
+        inc hl
         call noise_hit
         ret
 
-noise_tick:
-        ld a, 12
-        call noise_hit
+; Load one melody period from HL. PSG2 Channel B is period +2 for detune.
+set_detuned_melody:
+        ld d, (hl)
+        inc hl
+        ld c, (hl)
+        inc hl
+
+        ld a, 0
+        out (PSG2_ADDR), a
+        ld a, d
+        out (PSG2_DATA), a
+        ld a, 1
+        out (PSG2_ADDR), a
+        ld a, c
+        out (PSG2_DATA), a
+
+        ld a, 2
+        out (PSG2_ADDR), a
+        ld a, d
+        add a, 2
+        out (PSG2_DATA), a
+        ld a, 3
+        out (PSG2_ADDR), a
+        ld a, c
+        adc a, 0
+        out (PSG2_DATA), a
+
+        ; Restart the decay envelope for this note.
+        ld a, 13
+        out (PSG2_ADDR), a
+        ld a, 00Eh
+        out (PSG2_DATA), a
         ret
 
-; A = noise period. Temporarily mix noise into Channel A, then restore tone.
+; A = noise period, B = drum volume. Pulse PSG2 Noise C, then mute it.
 noise_hit:
         push af
         ld a, 6
-        out (PSG_ADDR), a
+        out (PSG2_ADDR), a
         pop af
-        out (PSG_DATA), a
+        out (PSG2_DATA), a
 
-        ; 30h enables noise only on A while leaving all three tones enabled.
-        ld a, 7
-        out (PSG_ADDR), a
-        ld a, 030h
-        out (PSG_DATA), a
-
-        ld a, 8
-        out (PSG_ADDR), a
-        ld a, 13
-        out (PSG_DATA), a
+        ld a, 10
+        out (PSG2_ADDR), a
+        ld a, b
+        out (PSG2_DATA), a
 
         ; Stage 5: alternate LED1/LED0 on every rhythm beat.
         ld a, e
         out (LED_PORT), a
         xor 3
         ld e, a
+        call debug_snapshot
         call delay_hit
 
-        ; Disable noise again and return Channel A to its chord volume.
-        ld a, 7
-        out (PSG_ADDR), a
-        ld a, 038h
-        out (PSG_DATA), a
-        ld a, 8
-        out (PSG_ADDR), a
         ld a, 10
-        out (PSG_DATA), a
+        out (PSG2_ADDR), a
+        xor a
+        out (PSG2_DATA), a
         call delay_beat
         ret
 
+; Publish a coherent register snapshot without changing the caller state.
+; PC is the return address of this CALL; SP is the caller's pre-CALL value.
+debug_snapshot:
+        push af
+        push bc
+        push de
+        push hl
+
+        ; Return address is eight bytes above the four saved register pairs.
+        ld hl, 8
+        add hl, sp
+        ld e, (hl)
+        inc hl
+        ld d, (hl)
+        ld a, e
+        out (DBG_PC_L), a
+        ld a, d
+        out (DBG_PC_H), a
+
+        ; The caller's SP is ten bytes above the current SP.
+        ld hl, 10
+        add hl, sp
+        ld a, l
+        out (DBG_SP_L), a
+        ld a, h
+        out (DBG_SP_H), a
+
+        pop hl
+        ld a, h
+        out (DBG_H), a
+        ld a, l
+        out (DBG_L), a
+
+        pop de
+        ld a, d
+        out (DBG_D), a
+        ld a, e
+        out (DBG_E), a
+
+        pop bc
+        ld a, b
+        out (DBG_B), a
+        ld a, c
+        out (DBG_C), a
+
+        ; Extract A/F through BC, then restore both AF and BC exactly.
+        pop af
+        push bc
+        push af
+        pop bc
+        ld a, b
+        out (DBG_A), a
+        ld a, c
+        out (DBG_F), a
+        push bc
+        pop af
+        pop bc
+        ret
+
 delay_hit:
-        ld bc, 0800h
+        ld bc, 0400h
 delay_hit_loop:
         dec bc
         ld a, b
@@ -136,7 +278,7 @@ delay_hit_loop:
         ret
 
 delay_beat:
-        ld bc, 07000h
+        ld bc, 03400h
 delay_beat_loop:
         dec bc
         ld a, b
@@ -144,12 +286,86 @@ delay_beat_loop:
         jr nz, delay_beat_loop
         ret
 
-; Tone periods at a 1.6875 MHz PSG clock: C - Am - F - G.
-chord_c:
-        db 093h, 01h, 040h, 01h, 00Dh, 01h ; C4 E4 G4
-chord_am:
-        db 0DFh, 01h, 093h, 01h, 040h, 01h ; A3 C4 E4
-chord_f:
-        db 05Ch, 02h, 0DFh, 01h, 093h, 01h ; F3 A3 C4
-chord_g:
-        db 01Ah, 02h, 0C4h, 01h, 067h, 01h ; G3 B3 D4
+; Each entry: PSG1 chord (6 bytes), then eight 4-byte steps:
+; melody period (little endian), noise period, drum volume.
+; Canon progression: C - G - Am - Em - F - C - F - G.
+canon_c:
+        db 093h,01h, 040h,01h, 00Dh,01h ; C4 E4 G4
+        db 040h,01h, 01Fh,0Fh ; E4, kick
+        db 00Dh,01h, 002h,05h ; G4, closed hat
+        db 0CAh,00h, 008h,0Ch ; C5, snare
+        db 00Dh,01h, 002h,04h ; G4, closed hat
+        db 0A0h,00h, 01Fh,0Eh ; E5, kick
+        db 0B4h,00h, 002h,05h ; D5, closed hat
+        db 0CAh,00h, 008h,0Ch ; C5, snare
+        db 00Dh,01h, 004h,08h ; G4, open hat
+canon_g:
+        db 0C4h,01h, 067h,01h, 00Dh,01h ; B3 D4 G4
+        db 067h,01h, 01Fh,0Fh ; D4
+        db 00Dh,01h, 002h,05h ; G4
+        db 0E2h,00h, 008h,0Ch ; B4
+        db 0B4h,00h, 002h,04h ; D5
+        db 086h,00h, 01Fh,0Eh ; G5
+        db 0B4h,00h, 002h,05h ; D5
+        db 0E2h,00h, 008h,0Ch ; B4
+        db 00Dh,01h, 004h,08h ; G4
+canon_am:
+        db 0DFh,01h, 093h,01h, 040h,01h ; A3 C4 E4
+        db 0F0h,00h, 01Fh,0Fh ; A4
+        db 0CAh,00h, 002h,05h ; C5
+        db 0A0h,00h, 008h,0Ch ; E5
+        db 0CAh,00h, 002h,04h ; C5
+        db 078h,00h, 01Fh,0Eh ; A5
+        db 0A0h,00h, 002h,05h ; E5
+        db 0CAh,00h, 008h,0Ch ; C5
+        db 0E2h,00h, 004h,08h ; B4
+canon_em:
+        db 01Ah,02h, 0C4h,01h, 040h,01h ; G3 B3 E4
+        db 040h,01h, 01Fh,0Fh ; E4
+        db 00Dh,01h, 002h,05h ; G4
+        db 0E2h,00h, 008h,0Ch ; B4
+        db 0A0h,00h, 002h,04h ; E5
+        db 086h,00h, 01Fh,0Eh ; G5
+        db 0A0h,00h, 002h,05h ; E5
+        db 0B4h,00h, 008h,0Ch ; D5
+        db 0E2h,00h, 004h,08h ; B4
+canon_f1:
+        db 0DFh,01h, 093h,01h, 02Eh,01h ; A3 C4 F4
+        db 02Eh,01h, 01Fh,0Fh ; F4
+        db 0F0h,00h, 002h,05h ; A4
+        db 0CAh,00h, 008h,0Ch ; C5
+        db 097h,00h, 002h,04h ; F5
+        db 0A0h,00h, 01Fh,0Eh ; E5
+        db 0CAh,00h, 002h,05h ; C5
+        db 0F0h,00h, 008h,0Ch ; A4
+        db 0CAh,00h, 004h,08h ; C5
+canon_c2:
+        db 01Ah,02h, 093h,01h, 040h,01h ; G3 C4 E4
+        db 00Dh,01h, 01Fh,0Fh ; G4
+        db 0CAh,00h, 002h,05h ; C5
+        db 0A0h,00h, 008h,0Ch ; E5
+        db 086h,00h, 002h,04h ; G5
+        db 0A0h,00h, 01Fh,0Eh ; E5
+        db 0CAh,00h, 002h,05h ; C5
+        db 00Dh,01h, 008h,0Ch ; G4
+        db 040h,01h, 004h,08h ; E4
+canon_f2:
+        db 05Ch,02h, 0DFh,01h, 093h,01h ; F3 A3 C4
+        db 0F0h,00h, 01Fh,0Fh ; A4
+        db 0CAh,00h, 002h,05h ; C5
+        db 097h,00h, 008h,0Ch ; F5
+        db 0CAh,00h, 002h,04h ; C5
+        db 0F0h,00h, 01Fh,0Eh ; A4
+        db 00Dh,01h, 002h,05h ; G4
+        db 02Eh,01h, 008h,0Ch ; F4
+        db 0CAh,00h, 004h,08h ; C5
+canon_g2:
+        db 01Ah,02h, 0C4h,01h, 067h,01h ; G3 B3 D4
+        db 0E2h,00h, 01Fh,0Fh ; B4
+        db 0B4h,00h, 002h,05h ; D5
+        db 086h,00h, 008h,0Ch ; G5
+        db 0B4h,00h, 002h,04h ; D5
+        db 0E2h,00h, 01Fh,0Eh ; B4
+        db 0F0h,00h, 002h,05h ; A4
+        db 00Dh,01h, 008h,0Ch ; G4
+        db 0B4h,00h, 004h,08h ; D5
